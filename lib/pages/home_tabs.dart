@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'home_page.dart';
 import 'publish_page.dart';
 import 'chat_page.dart';
@@ -26,6 +27,19 @@ class _HomeTabsState extends State<HomeTabs> {
       const ChatPage(),
       const ProfilePage(),
     ];
+
+    // 监听认证状态变化，确保所有页面都能响应登录状态变化
+    Supabase.instance.client.auth.onAuthStateChange.listen((event) {
+      if (mounted) {
+        setState(() {}); // 重新创建页面，确保状态更新
+        _pages = [
+          const HomePage(),
+          const PublishPage(),
+          const ChatPage(),
+          const ProfilePage(),
+        ];
+      }
+    });
   }
 
   @override

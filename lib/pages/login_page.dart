@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'register_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -33,7 +34,12 @@ class _LoginPageState extends State<LoginPage> {
         Navigator.of(context).pop(); // 登录成功，返回上一页
       }
     } on AuthException catch (e) {
-      _showError(e.message);
+      // Supabase 出于安全考虑，对所有登录失败都返回相同错误信息
+      if (e.message.contains('Invalid login credentials')) {
+        _showError('邮箱或密码错误，请检查后重试');
+      } else {
+        _showError(e.message);
+      }
     } catch (e) {
       _showError('登录失败: $e');
     } finally {
@@ -98,10 +104,10 @@ class _LoginPageState extends State<LoginPage> {
             const SizedBox(height: 16),
             TextButton(
               onPressed: () {
-                // TODO: 跳转到注册页
-                ScaffoldMessenger.of(
+                Navigator.push(
                   context,
-                ).showSnackBar(const SnackBar(content: Text('注册功能待实现')));
+                  MaterialPageRoute(builder: (context) => const RegisterPage()),
+                );
               },
               child: const Text('没有账号？去注册'),
             ),
