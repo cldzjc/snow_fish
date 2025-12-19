@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'home_page.dart';
-import 'publish_page.dart'; // 如无此文件，请根据你的项目调整或创建
-import 'chat_page.dart'; // 如无此文件，请根据你的项目调整或创建
-import 'profile_page.dart'; // 如无此文件，请根据你的项目调整或创建
+import 'publish_page.dart';
+import 'chat_page.dart';
+import 'profile_page.dart';
 
 class HomeTabs extends StatefulWidget {
-  final bool isFirebaseReady;
-  const HomeTabs({super.key, required this.isFirebaseReady});
+  const HomeTabs({super.key});
 
   @override
   State<HomeTabs> createState() => _HomeTabsState();
@@ -21,10 +20,9 @@ class _HomeTabsState extends State<HomeTabs> {
   @override
   void initState() {
     super.initState();
-    // 传递初始化状态给需要数据库的页面
     _pages = [
-      HomePage(isFirebaseReady: widget.isFirebaseReady),
-      PublishPage(isFirebaseReady: widget.isFirebaseReady),
+      const HomePage(),
+      const PublishPage(),
       const ChatPage(),
       const ProfilePage(),
     ];

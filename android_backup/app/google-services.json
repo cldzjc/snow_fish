@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "962734319490",
+    "project_id": "snow-fish-app",
+    "storage_bucket": "snow-fish-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:962734319490:android:c9cc15f011a7ae572e919b",
+        "android_client_info": {
+          "package_name": "com.example.snow_fish"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC8hV0WHuig-FwfgG8Szvxdaf2T4U9ULOA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

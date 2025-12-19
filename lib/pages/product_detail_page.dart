@@ -77,6 +77,65 @@ class ProductDetailPage extends StatelessWidget {
                   const SizedBox(height: 16),
                   Divider(color: Colors.grey[300]),
                   const SizedBox(height: 16),
+
+                  // 商品详细信息
+                  if (product.category != null ||
+                      product.brand != null ||
+                      product.condition != null)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "商品信息",
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: [
+                            if (product.category != null)
+                              _buildInfoChip("分类", product.category!),
+                            if (product.brand != null)
+                              _buildInfoChip("品牌", product.brand!),
+                            if (product.condition != null)
+                              _buildInfoChip("成色", product.condition!),
+                            if (product.size != null)
+                              _buildInfoChip("尺寸", product.size!),
+                            if (product.usageTime != null)
+                              _buildInfoChip("使用情况", product.usageTime!),
+                            if (product.negotiable == true)
+                              _buildInfoChip("价格", "可议价", Colors.green[100]!),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                    ),
+
+                  // 交易信息
+                  if (product.transactionMethods != null)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "交易方式",
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          product.transactionMethods!,
+                          style: TextStyle(color: Colors.grey[700]),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                    ),
+
                   Row(
                     children: [
                       CircleAvatar(
@@ -111,7 +170,8 @@ class ProductDetailPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    "这是一段关于 ${product.title} 的详细描述，数据来自 Firestore。现在您可以从发布页面添加新商品，它们会实时显示在这里。\n\n- 这是从数据库加载的商品，真实可靠。\n- 使用 Firestore 可以让 App 具备真正的动态数据能力，是任何上线 App 的基础。\n\n欢迎联系卖家：${product.sellerName}。",
+                    product.description ??
+                        "这是一段关于 ${product.title} 的详细描述。现在您可以从发布页面添加新商品，它们会实时显示在这里。\n\n- 这是从数据库加载的商品，真实可靠。\n- 欢迎联系卖家：${product.sellerName}。",
                     style: TextStyle(color: Colors.grey[700], height: 1.5),
                   ),
                 ],
@@ -173,6 +233,22 @@ class ProductDetailPage extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // 信息标签组件
+  Widget _buildInfoChip(String label, String value, [Color? backgroundColor]) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: backgroundColor ?? Colors.grey[100],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: Text(
+        '$label: $value',
+        style: const TextStyle(fontSize: 12, color: Colors.black87),
       ),
     );
   }

@@ -1,10 +1,7 @@
-// 配置：切换到本地演示模式以避免访问 Firebase（适用于无法访问外网时）
-const bool USE_LOCAL_DATA = true; // true=使用本地模拟数据，false=使用 Firebase
-const bool USE_FIREBASE_EMULATOR = false; // 如果你在本机启动 emulator，可切换为 true
-const String FIRESTORE_EMULATOR_HOST = '10.0.2.2';
-const int FIRESTORE_EMULATOR_PORT = 8080;
+// 配置：切换到本地演示模式或 Supabase 模式
+const bool USE_LOCAL_DATA = false; // true=使用本地模拟数据，false=使用 Supabase
 
-// 本地示例数据（简单 Map 列表），PublishPage 会把发布内容 push 到这里以实现实时演示
+// 本地示例数据（仅在 USE_LOCAL_DATA = true 时使用）
 List<Map<String, dynamic>> localProducts = [
   {
     'id': 'local-1',
@@ -12,8 +9,17 @@ List<Map<String, dynamic>> localProducts = [
     'price': 1200.0,
     'image': 'https://picsum.photos/seed/local1/500/500',
     'location': '北京',
-    'sellerAvatar': 'https://api.dicebear.com/7.x/avataaars/svg?seed=LocalA',
-    'sellerName': '示例用户A',
+    'selleravatar': 'https://api.dicebear.com/7.x/avataaars/svg?seed=LocalA',
+    'sellername': '示例用户A',
+    // 新增字段
+    'category': '运动户外',
+    'condition': '九成新',
+    'description': '专业滑雪板，使用半年，保存完好',
+    'brand': 'Burton',
+    'size': '160cm',
+    'usage_time': '使用半年',
+    'transaction_methods': '当面交易',
+    'negotiable': true,
   },
   {
     'id': 'local-2',
@@ -21,7 +27,16 @@ List<Map<String, dynamic>> localProducts = [
     'price': 200.0,
     'image': 'https://picsum.photos/seed/local2/500/500',
     'location': '上海',
-    'sellerAvatar': 'https://api.dicebear.com/7.x/avataaars/svg?seed=LocalB',
-    'sellerName': '示例用户B',
+    'selleravatar': 'https://api.dicebear.com/7.x/avataaars/svg?seed=LocalB',
+    'sellername': '示例用户B',
+    // 新增字段
+    'category': '运动户外',
+    'condition': '全新',
+    'description': '全新雪镜，未开封，支持防雾功能',
+    'brand': 'Oakley',
+    'size': 'M',
+    'usage_time': '全新未使用',
+    'transaction_methods': '当面交易,邮寄',
+    'negotiable': false,
   },
 ];

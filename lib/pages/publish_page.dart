@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config.dart';
+import '../product_service.dart';
+import 'login_page.dart';
 
 class PublishPage extends StatefulWidget {
-  final bool isFirebaseReady;
-  const PublishPage({super.key, required this.isFirebaseReady});
+  const PublishPage({super.key});
 
   @override
   State<PublishPage> createState() => _PublishPageState();
@@ -16,22 +17,26 @@ class _PublishPageState extends State<PublishPage> {
   final _locationController = TextEditingController();
   bool _isLoading = false;
 
-  // 获取 Firestore 集合的路径
-  CollectionReference<Map<String, dynamic>> get productsCollection {
-    // 遵循 Firestore 公共数据存储规则: /artifacts/{appId}/public/data/{your_collection_name}
-    return FirebaseFirestore.instance
-        .collection('artifacts')
-        .doc('default-app-id')
-        .collection('public')
-        .doc('data')
-        .collection('products');
+  // 检查登录状态
+  bool _isLoggedIn() {
+    return Supabase.instance.client.auth.currentSession != null;
   }
 
-  // 核心功能：上传数据到 Firestore
+  // 核心功能：发布商品
   Future<void> _publishProduct() async {
-    if (!widget.isFirebaseReady && !USE_LOCAL_DATA) {
-      _showSnackbar('数据库未初始化，无法发布', Colors.red);
-      return;
+    // 先检查登录状态
+    if (!_isLoggedIn()) {
+      // 未登录，跳转到登录页
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginPage()),
+      );
+      // 登录成功后返回，检查是否现在已登录
+      if (!_isLoggedIn()) {
+        // 如果还是未登录，说明用户取消了登录
+        _showSnackbar('需要登录后才能发布商品', Colors.orange);
+        return;
+      }
     }
 
     if (_titleController.text.isEmpty ||
@@ -46,34 +51,43 @@ class _PublishPageState extends State<PublishPage> {
     });
 
     try {
-      final newProduct = {
-        'title': _titleController.text,
-        'price': double.tryParse(_priceController.text) ?? 0.0,
-        'location': _locationController.text,
-        // 使用固定的虚拟卖家信息，实际应用中应使用真实用户数据
-        'sellerName': '新用户-${DateTime.now().millisecond}',
-        'sellerAvatar':
-            'https://api.dicebear.com/7.x/avataaars/svg?seed=NewUser',
-        'image':
-            'https://picsum.photos/seed/${DateTime.now().millisecondsSinceEpoch}/500/600',
-        'timestamp': FieldValue.serverTimestamp(), // 记录发布时间
-      };
-
       if (USE_LOCAL_DATA) {
-        // 本地模式：写入内存列表（home_page 读取同一列表）
-        // 生成一个 id
+        // 本地模式：写入内存列表
         final id = 'local-${DateTime.now().millisecondsSinceEpoch}';
         localProducts.insert(0, {
           'id': id,
-          'title': newProduct['title'],
-          'price': newProduct['price'],
-          'image': newProduct['image'],
-          'location': newProduct['location'],
-          'sellerAvatar': newProduct['sellerAvatar'],
-          'sellerName': newProduct['sellerName'],
+          'title': _titleController.text,
+          'price': double.tryParse(_priceController.text) ?? 0.0,
+          'image':
+              'https://picsum.photos/seed/${DateTime.now().millisecondsSinceEpoch}/500/600',
+          'location': _locationController.text,
+          'selleravatar': // 保持一致的字段名
+              'https://api.dicebear.com/7.x/avataaars/svg?seed=NewUser',
+          'sellername': '新用户-${DateTime.now().millisecond}', // 保持一致的字段名
         });
       } else {
-        await productsCollection.add(newProduct);
+        // Supabase 模式：使用 ProductService
+        print('开始发布商品到 Supabase...');
+        final result = await ProductService().createProduct(
+          title: _titleController.text,
+          price: double.tryParse(_priceController.text) ?? 0.0,
+          location: _locationController.text,
+          sellerName: '新用户-${DateTime.now().millisecond}',
+          sellerAvatar:
+              'https://api.dicebear.com/7.x/avataaars/svg?seed=NewUser',
+          image:
+              'https://picsum.photos/seed/${DateTime.now().millisecondsSinceEpoch}/500/600',
+          // 新增字段暂时使用默认值
+          category: '其他',
+          condition: '九成新',
+          description: '商品描述：${_titleController.text}',
+          brand: null,
+          size: null,
+          usageTime: '使用半年',
+          transactionMethods: '当面交易',
+          negotiable: false,
+        );
+        print('发布成功，返回的商品数据: $result');
       }
 
       // 清空表单
@@ -84,7 +98,7 @@ class _PublishPageState extends State<PublishPage> {
       _showSnackbar('商品发布成功！首页已实时更新', Colors.green);
     } catch (e) {
       _showSnackbar('发布失败: $e', Colors.red);
-      print('Firestore Error: $e');
+      print('发布 Error: $e');
     } finally {
       setState(() {
         _isLoading = false;

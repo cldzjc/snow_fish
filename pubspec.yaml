@@ -11,9 +11,9 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Firebase
-  firebase_core: ^2.10.0
-  cloud_firestore: ^4.8.0
+  # Database
+  supabase_flutter: ^2.5.2
+  supabase: ^2.2.0
 
   # UI & Utils
   cupertino_icons: ^1.0.6
@@ -27,6 +27,8 @@ dev_dependencies:
     sdk: flutter
 
   flutter_lints: ^3.0.0
+  integration_test:
+    sdk: flutter
 
 flutter:
   uses-material-design: true

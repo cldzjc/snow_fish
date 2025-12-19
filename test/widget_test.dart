@@ -13,7 +13,7 @@ import 'package:snow_fish/main.dart';
 void main() {
   testWidgets('App builds', (WidgetTester tester) async {
     // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp(isFirebaseReady: true));
+    await tester.pumpWidget(const MyApp());
     await tester.pumpAndSettle();
 
     // 简单断言：确认 MaterialApp 已构建
