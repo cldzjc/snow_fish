@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 允许应用访问网络（必须项） -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:label="snow_fish"
         android:name="${applicationName}"

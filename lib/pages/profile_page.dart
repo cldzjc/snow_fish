@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'login_page.dart';
 import 'register_page.dart';
+import 'my_products_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -127,10 +128,10 @@ class _ProfilePageState extends State<ProfilePage> {
           title: const Text('我发布的商品'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () {
-            // TODO: 跳转到我的商品页面
-            ScaffoldMessenger.of(
+            Navigator.push(
               context,
-            ).showSnackBar(const SnackBar(content: Text('功能开发中')));
+              MaterialPageRoute(builder: (context) => const MyProductsPage()),
+            );
           },
         ),
 

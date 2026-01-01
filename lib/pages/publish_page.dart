@@ -12,10 +12,21 @@ class PublishPage extends StatefulWidget {
 }
 
 class _PublishPageState extends State<PublishPage> {
-  final _titleController = TextEditingController();
-  final _priceController = TextEditingController();
-  final _locationController = TextEditingController();
+  final _contentController = TextEditingController(); // 正文内容
+  final _priceController = TextEditingController(); // 价格
+  String? _selectedImage; // 选中的图片URL
+
   bool _isLoading = false;
+
+  // 预设图片选项（简化版，实际可以做图片上传）
+  final List<String> _presetImages = [
+    'https://picsum.photos/400/300?random=1',
+    'https://picsum.photos/400/300?random=2',
+    'https://picsum.photos/400/300?random=3',
+    'https://picsum.photos/400/300?random=4',
+    'https://picsum.photos/400/300?random=5',
+    'https://picsum.photos/400/300?random=6',
+  ];
 
   // 检查登录状态
   bool _isLoggedIn() {
@@ -39,10 +50,10 @@ class _PublishPageState extends State<PublishPage> {
       }
     }
 
-    if (_titleController.text.isEmpty ||
+    if (_contentController.text.isEmpty ||
         _priceController.text.isEmpty ||
-        _locationController.text.isEmpty) {
-      _showSnackbar('请填写所有必填信息', Colors.orange);
+        _selectedImage == null) {
+      _showSnackbar('请填写正文、价格并选择图片', Colors.orange);
       return;
     }
 
@@ -56,44 +67,67 @@ class _PublishPageState extends State<PublishPage> {
         final id = 'local-${DateTime.now().millisecondsSinceEpoch}';
         localProducts.insert(0, {
           'id': id,
-          'title': _titleController.text,
+          'title': _contentController.text.length > 20
+              ? '${_contentController.text.substring(0, 20)}...'
+              : _contentController.text, // 正文作为标题
           'price': double.tryParse(_priceController.text) ?? 0.0,
-          'image':
-              'https://picsum.photos/seed/${DateTime.now().millisecondsSinceEpoch}/500/600',
-          'location': _locationController.text,
-          'selleravatar': // 保持一致的字段名
+          'image': _selectedImage,
+          'location': '未知地点', // 简化为默认值
+          'selleravatar':
               'https://api.dicebear.com/7.x/avataaars/svg?seed=NewUser',
-          'sellername': '新用户-${DateTime.now().millisecond}', // 保持一致的字段名
+          'sellername': '新用户-${DateTime.now().millisecond}',
+          'description': _contentController.text, // 正文作为描述
         });
       } else {
         // Supabase 模式：使用 ProductService
         print('开始发布商品到 Supabase...');
-        final result = await ProductService().createProduct(
-          title: _titleController.text,
-          price: double.tryParse(_priceController.text) ?? 0.0,
-          location: _locationController.text,
-          sellerName: '新用户-${DateTime.now().millisecond}',
-          sellerAvatar:
-              'https://api.dicebear.com/7.x/avataaars/svg?seed=NewUser',
-          image:
-              'https://picsum.photos/seed/${DateTime.now().millisecondsSinceEpoch}/500/600',
-          // 新增字段暂时使用默认值
-          category: '其他',
-          condition: '九成新',
-          description: '商品描述：${_titleController.text}',
-          brand: null,
-          size: null,
-          usageTime: '使用半年',
-          transactionMethods: '当面交易',
-          negotiable: false,
-        );
-        print('发布成功，返回的商品数据: $result');
+        final currentUser = Supabase.instance.client.auth.currentUser;
+        final sellerName =
+            currentUser?.userMetadata?['name'] ?? currentUser?.email ?? '用户';
+        final sellerAvatar = currentUser != null
+            ? 'https://api.dicebear.com/7.x/avataaars/png?seed=${currentUser.id}'
+            : 'https://api.dicebear.com/7.x/avataaars/png?seed=NewUser';
+
+        try {
+          final result = await ProductService().createProduct(
+            title: _contentController.text.length > 20
+                ? '${_contentController.text.substring(0, 20)}...'
+                : _contentController.text, // 正文前20字作为标题
+            price: double.tryParse(_priceController.text) ?? 0.0,
+            location: '未知地点', // 简化版本，固定值
+            sellerName: sellerName,
+            sellerAvatar: sellerAvatar,
+            image: _selectedImage!, // 用户选择的图片
+            description: _contentController.text, // 正文作为描述
+            // 其他字段暂时不填
+            category: null,
+            condition: null,
+            brand: null,
+            size: null,
+            usageTime: null,
+            transactionMethods: null,
+            negotiable: false,
+          );
+          print('发布成功，返回的商品数据: $result');
+        } catch (e) {
+          final msg = e.toString();
+          if (msg.contains('network:')) {
+            _showSnackbar('网络无法连接，发布失败，请检查网络', Colors.red);
+          } else if (msg.contains('permission:')) {
+            _showSnackbar('发布被拒绝（权限不足），请检查 Supabase RLS 策略', Colors.red);
+          } else {
+            _showSnackbar('发布失败: $e', Colors.red);
+          }
+          print('发布 Error: $e');
+        }
       }
 
       // 清空表单
-      _titleController.clear();
+      _contentController.clear();
       _priceController.clear();
-      _locationController.clear();
+      setState(() {
+        _selectedImage = null;
+      });
 
       _showSnackbar('商品发布成功！首页已实时更新', Colors.green);
     } catch (e) {
@@ -134,23 +168,134 @@ class _PublishPageState extends State<PublishPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              '商品信息',
+              '发布商品',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
 
-            // 标题输入
+            // 1. 图片选择
+            const Text(
+              '选择图片',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              height: 120,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey[300]!),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: _selectedImage != null
+                  ? Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(
+                            _selectedImage!,
+                            width: double.infinity,
+                            height: 120,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: IconButton(
+                            onPressed: () {
+                              setState(() {
+                                _selectedImage = null;
+                              });
+                            },
+                            icon: const Icon(
+                              Icons.close,
+                              color: Colors.white,
+                              shadows: [Shadow(blurRadius: 4)],
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  : InkWell(
+                      onTap: () {
+                        // 显示图片选择对话框
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('选择图片'),
+                            content: SizedBox(
+                              width: double.maxFinite,
+                              height: 200,
+                              child: GridView.builder(
+                                gridDelegate:
+                                    const SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: 3,
+                                      crossAxisSpacing: 8,
+                                      mainAxisSpacing: 8,
+                                    ),
+                                itemCount: _presetImages.length,
+                                itemBuilder: (context, index) {
+                                  return InkWell(
+                                    onTap: () {
+                                      setState(() {
+                                        _selectedImage = _presetImages[index];
+                                      });
+                                      Navigator.of(context).pop();
+                                    },
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.network(
+                                        _presetImages[index],
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.of(context).pop(),
+                                child: const Text('取消'),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                      child: const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.add_photo_alternate,
+                              size: 32,
+                              color: Colors.grey,
+                            ),
+                            SizedBox(height: 8),
+                            Text(
+                              '点击选择图片',
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+            ),
+            const SizedBox(height: 16),
+
+            // 2. 正文输入
             TextField(
-              controller: _titleController,
+              controller: _contentController,
+              maxLines: 5,
               decoration: const InputDecoration(
-                labelText: '商品标题 (必填)',
+                labelText: '正文内容 (必填)',
                 border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.title),
+                hintText: '描述你的商品...',
+                alignLabelWithHint: true,
               ),
             ),
             const SizedBox(height: 16),
 
-            // 价格输入
+            // 3. 价格输入
             TextField(
               controller: _priceController,
               keyboardType: TextInputType.number,
@@ -158,17 +303,6 @@ class _PublishPageState extends State<PublishPage> {
                 labelText: '价格 (元, 必填)',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.attach_money),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // 地点输入
-            TextField(
-              controller: _locationController,
-              decoration: const InputDecoration(
-                labelText: '交易地点 (必填)',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.location_on),
               ),
             ),
             const SizedBox(height: 30),
@@ -207,5 +341,12 @@ class _PublishPageState extends State<PublishPage> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _contentController.dispose();
+    _priceController.dispose();
+    super.dispose();
   }
 }

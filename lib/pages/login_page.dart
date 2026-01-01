@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'register_page.dart';
+import 'dart:io';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -33,6 +34,9 @@ class _LoginPageState extends State<LoginPage> {
       if (mounted) {
         Navigator.of(context).pop(); // 登录成功，返回上一页
       }
+    } on SocketException catch (_) {
+      // 明确捕获网络错误并给出友好提示
+      _showError('网络无法连接，请检查模拟器或主机网络设置');
     } on AuthException catch (e) {
       // Supabase 出于安全考虑，对所有登录失败都返回相同错误信息
       if (e.message.contains('Invalid login credentials')) {

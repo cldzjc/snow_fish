@@ -127,8 +127,36 @@ class _HomePageState extends State<HomePage> {
       stream: ProductService().getProductsStream(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          print('Supabase Stream Error: ${snapshot.error}'); // 添加调试信息
-          return const Center(child: Text('加载失败，请检查网络连接'));
+          final msg = snapshot.error?.toString() ?? '';
+          print('Supabase Stream Error: $msg'); // 添加调试信息
+
+          String display = '加载失败，请检查网络连接';
+          if (msg.contains('network:') ||
+              msg.contains('Failed host lookup') ||
+              msg.contains('SocketException')) {
+            display = '网络连接失败，请检查模拟器或主机网络设置';
+          } else if (msg.contains('permission:') ||
+              msg.contains('403') ||
+              msg.contains('forbidden')) {
+            display = '权限错误：无法加载商品，请检查 Supabase RLS 策略';
+          }
+
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(display, style: const TextStyle(color: Colors.grey)),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: () => setState(() {}),
+                    child: const Text('重试'),
+                  ),
+                ],
+              ),
+            ),
+          );
         }
 
         if (!snapshot.hasData) {
