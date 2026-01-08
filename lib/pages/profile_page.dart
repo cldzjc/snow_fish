@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'login_page.dart';
 import 'register_page.dart';
 import 'my_products_page.dart';
+import 'edit_profile_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -168,12 +169,13 @@ class _ProfilePageState extends State<ProfilePage> {
 
         ListTile(
           leading: const Icon(Icons.person),
-          title: const Text('个人资料'),
+          title: const Text('编辑个人资料'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () {
-            ScaffoldMessenger.of(
+            Navigator.push(
               context,
-            ).showSnackBar(const SnackBar(content: Text('功能开发中')));
+              MaterialPageRoute(builder: (context) => const EditProfilePage()),
+            );
           },
         ),
 

@@ -12,7 +12,7 @@ class ProductService {
         .from('products')
         .stream(primaryKey: ['id'])
         .order('created_at', ascending: false)
-        .map((event) => event as List<Map<String, dynamic>>);
+        .map((event) => List<Map<String, dynamic>>.from(event));
   }
 
   // 获取商品列表 (一次性查询)
@@ -66,7 +66,7 @@ class ProductService {
     }
   }
 
-  // 发布新商品
+  // 发布新商品（简化版：只需标题、价格、图片、位置和描述）
   Future<Map<String, dynamic>> createProduct({
     required String title,
     required double price,
@@ -75,15 +75,7 @@ class ProductService {
     required String sellerAvatar,
     required String image,
     String? userId,
-    // 新增可选字段
-    String? category,
-    String? condition,
-    String? description,
-    String? brand,
-    String? size,
-    String? usageTime,
-    String? transactionMethods,
-    bool? negotiable,
+    String? description, // 商品描述（可选）
   }) async {
     try {
       final currentUserId = Supabase.instance.client.auth.currentUser?.id;
@@ -96,15 +88,7 @@ class ProductService {
         'user_id': userId ?? currentUserId,
         'image': image,
         'created_at': DateTime.now().toUtc().toIso8601String(),
-        // 新增字段
-        'category': category,
-        'condition': condition,
-        'description': description,
-        'brand': brand,
-        'size': size,
-        'usage_time': usageTime, // 匹配数据库字段名
-        'transaction_methods': transactionMethods, // 匹配数据库字段名
-        'negotiable': negotiable,
+        if (description != null) 'description': description,
       };
 
       final response = await _client

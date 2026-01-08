@@ -78,12 +78,19 @@ class _PublishPageState extends State<PublishPage> {
           'sellername': '新用户-${DateTime.now().millisecond}',
           'description': _contentController.text, // 正文作为描述
         });
+
+        // 本地发布成功，关闭页面并返回 true
+        if (mounted) Navigator.pop(context, true);
+        return;
       } else {
         // Supabase 模式：使用 ProductService
         print('开始发布商品到 Supabase...');
         final currentUser = Supabase.instance.client.auth.currentUser;
         final sellerName =
-            currentUser?.userMetadata?['name'] ?? currentUser?.email ?? '用户';
+            (currentUser?.userMetadata?['name'] as String?) ??
+            (currentUser?.userMetadata?['nickname'] as String?) ??
+            currentUser?.email ??
+            '用户';
         final sellerAvatar = currentUser != null
             ? 'https://api.dicebear.com/7.x/avataaars/png?seed=${currentUser.id}'
             : 'https://api.dicebear.com/7.x/avataaars/png?seed=NewUser';
@@ -99,16 +106,12 @@ class _PublishPageState extends State<PublishPage> {
             sellerAvatar: sellerAvatar,
             image: _selectedImage!, // 用户选择的图片
             description: _contentController.text, // 正文作为描述
-            // 其他字段暂时不填
-            category: null,
-            condition: null,
-            brand: null,
-            size: null,
-            usageTime: null,
-            transactionMethods: null,
-            negotiable: false,
           );
           print('发布成功，返回的商品数据: $result');
+
+          // 发布成功后返回并通知刷新
+          if (mounted) Navigator.pop(context, true);
+          return;
         } catch (e) {
           final msg = e.toString();
           if (msg.contains('network:')) {

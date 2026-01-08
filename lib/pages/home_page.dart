@@ -1,8 +1,10 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'product_detail_page.dart';
+import 'posts_list_widget.dart';
+import 'publish_post_page.dart';
+import 'publish_page.dart';
 import '../config.dart';
 import '../product_service.dart';
 
@@ -69,7 +71,7 @@ class Product {
   }
 }
 
-// 2. 首页组件（简化为使用 Supabase）
+// 2. 首页组件（两分区：广场 + 雪具交易）
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -77,13 +79,37 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: '广场'),
+            Tab(text: '雪具交易'),
+          ],
+          labelColor: Colors.black,
+          indicatorColor: Colors.blue,
+        ),
         title: Container(
           height: 40,
           decoration: BoxDecoration(
@@ -100,7 +126,54 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ),
-      body: _buildProductList(),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          PostsListWidget(), // 广场：帖子列表
+          _buildProductList(), // 雪具交易：商品列表（原有逻辑）
+        ],
+      ),
+      floatingActionButton: AnimatedBuilder(
+        animation: _tabController,
+        builder: (context, _) {
+          final isPostsTab = _tabController.index == 0;
+          return FloatingActionButton(
+            onPressed: () async {
+              if (isPostsTab) {
+                final res = await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => PublishPostPage()),
+                );
+                if (res == true) {
+                  setState(() {});
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('帖子发布成功'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              } else {
+                final res = await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => PublishPage()),
+                );
+                if (res == true) {
+                  setState(() {});
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('商品发布成功'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              }
+            },
+            tooltip: isPostsTab ? '发布帖子' : '发布商品',
+            child: Icon(isPostsTab ? Icons.create : Icons.add_box_outlined),
+          );
+        },
+      ),
     );
   }
 
