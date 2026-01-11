@@ -82,3 +82,5 @@ ALTER TABLE posts ADD COLUMN author_name TEXT;
 - [ ] 帖子发布：标题 → 内容 → 可选图片 → 发布成功
 - [ ] 帖子列表：显示 "发布人: xxxxxxxx"（UUID 截断，无错误）
 - [ ] 个人资料：可编辑昵称、年龄、性别、介绍（可选功能）
+
+今天完整跑通了「Supabase + 阿里云 OSS 直传」的图片上传方案，为后续发帖、商品、头像等功能打下基础。

@@ -1,209 +1,393 @@
+import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:http/http.dart' as http;
+import 'package:mime/mime.dart';
+import 'package:path/path.dart' as p;
 
+/// EditProfilePage
+/// - Fetches current user's row in `user_profiles`
+/// - Allows editing username, intro
+/// - Pick avatar / cover / video files using FilePicker
+/// - For each picked file: call Supabase Edge Function `get-oss-upload-url` to get `uploadUrl` + `publicUrl`, then HTTP PUT file bytes to `uploadUrl`
+/// - On success, updates `user_profiles` with returned `publicUrl`s
 class EditProfilePage extends StatefulWidget {
-  const EditProfilePage({super.key});
+  const EditProfilePage({Key? key}) : super(key: key);
 
   @override
   State<EditProfilePage> createState() => _EditProfilePageState();
 }
 
 class _EditProfilePageState extends State<EditProfilePage> {
-  late TextEditingController _nicknameController;
-  late TextEditingController _ageController;
-  late TextEditingController _bioController;
+  final _usernameController = TextEditingController();
+  final _introController = TextEditingController();
 
-  String _selectedGender = '其他'; // 默认值
+  String? _avatarUrl;
+  String? _coverUrl;
+  String? _videoUrl;
+
+  PlatformFile? _pickedAvatar;
+  PlatformFile? _pickedCover;
+  PlatformFile? _pickedVideo;
+
   bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
-    _loadUserData();
+    _loadProfile();
   }
 
-  void _loadUserData() {
+  Future<void> _loadProfile() async {
     final user = Supabase.instance.client.auth.currentUser;
-    if (user != null) {
-      final metadata = user.userMetadata ?? {};
-      _nicknameController = TextEditingController(
-        text: metadata['nickname'] as String? ?? '',
-      );
-      _ageController = TextEditingController(
-        text: metadata['age'] != null ? metadata['age'].toString() : '',
-      );
-      _selectedGender = (metadata['gender'] as String?) ?? '其他';
-      _bioController = TextEditingController(
-        text: metadata['bio'] as String? ?? '',
-      );
+    if (user == null) return;
+
+    final res = await Supabase.instance.client
+        .from('user_profiles')
+        .select()
+        .eq('id', user.id)
+        .maybeSingle();
+
+    if (res != null) {
+      final data = res as Map<String, dynamic>;
+      setState(() {
+        // Support both old/new column names: username <-> nickname, intro <-> bio,
+        // cover_url <-> background_url, video_url <-> profile_video_url
+        _usernameController.text =
+            (data['username'] as String?) ??
+            (data['nickname'] as String?) ??
+            '';
+        _introController.text =
+            (data['intro'] as String?) ?? (data['bio'] as String?) ?? '';
+        _avatarUrl =
+            (data['avatar_url'] as String?) ?? (data['avatar'] as String?);
+        _coverUrl =
+            (data['cover_url'] as String?) ??
+            (data['background_url'] as String?);
+        _videoUrl =
+            (data['video_url'] as String?) ??
+            (data['profile_video_url'] as String?);
+      });
     }
   }
 
-  @override
-  void dispose() {
-    _nicknameController.dispose();
-    _ageController.dispose();
-    _bioController.dispose();
-    super.dispose();
+  Future<void> _pickAvatar() async {
+    final result = await FilePicker.platform.pickFiles(type: FileType.image);
+    if (result != null && result.files.isNotEmpty) {
+      setState(() => _pickedAvatar = result.files.first);
+    }
   }
 
-  Future<void> _saveProfile() async {
-    if (_nicknameController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('昵称不能为空'), backgroundColor: Colors.red),
+  Future<void> _pickCover() async {
+    final result = await FilePicker.platform.pickFiles(type: FileType.image);
+    if (result != null && result.files.isNotEmpty) {
+      setState(() => _pickedCover = result.files.first);
+    }
+  }
+
+  Future<void> _pickVideo() async {
+    final result = await FilePicker.platform.pickFiles(type: FileType.video);
+    if (result != null && result.files.isNotEmpty) {
+      setState(() => _pickedVideo = result.files.first);
+    }
+  }
+
+  /// Calls edge function to get uploadUrl and publicUrl
+  Future<Map<String, dynamic>> _getUploadInfo(
+    String filename,
+    String contentType,
+  ) async {
+    // Edge Function expects `filename` and `contentType` as keys
+    final body = jsonEncode({
+      'filename': filename,
+      'contentType': contentType,
+      'owner_type': 'user_profiles',
+      'owner_id': Supabase.instance.client.auth.currentUser!.id,
+    });
+
+    try {
+      final resp = await Supabase.instance.client.functions.invoke(
+        'get-oss-upload-url',
+        body: body,
       );
+      // Expect function return shape: {"uploadUrl": "...", "publicUrl": "..."}
+      final data = resp.data as Map<String, dynamic>?;
+      if (data == null) throw Exception('Edge function returned no data');
+      return data;
+    } on FunctionException catch (fe) {
+      throw Exception(
+        "Edge Function 调用失败 (${fe.status}): ${fe.toString()}. 请确认函数名 'get-oss-upload-url' 已部署并可用。",
+      );
+    } catch (e) {
+      throw Exception('调用 Edge Function 失败: $e');
+    }
+  }
+
+  Future<String> _uploadFileBytes(
+    Uint8List bytes,
+    String uploadUrl,
+    String contentType,
+  ) async {
+    final putResp = await http.put(
+      Uri.parse(uploadUrl),
+      headers: {'content-type': contentType},
+      body: bytes,
+    );
+    if (putResp.statusCode >= 200 && putResp.statusCode < 300) {
+      return 'ok';
+    }
+    throw Exception('Upload failed: ${putResp.statusCode}');
+  }
+
+  // Read bytes from PlatformFile; prefer in-memory bytes, fallback to reading from path
+  Future<Uint8List> _readFileBytes(PlatformFile file) async {
+    if (file.bytes != null) return file.bytes!;
+    if (file.path != null) return await File(file.path!).readAsBytes();
+    throw Exception('File bytes unavailable for ${file.name}');
+  }
+
+  Future<void> _save() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先登录')));
       return;
     }
 
     setState(() => _isSaving = true);
-
     try {
-      final age = _ageController.text.isEmpty
-          ? null
-          : int.tryParse(_ageController.text);
-      final newMetadata = {
-        // 保存两套字段以兼容现有代码：'name' 作为主要用户名，'nickname' 作为显示昵称
-        'name': _nicknameController.text.trim(),
-        'nickname': _nicknameController.text.trim(),
-        if (age != null) 'age': age,
-        'gender': _selectedGender,
-        'bio': _bioController.text.trim(),
+      // Use the existing table columns in your schema
+      final updates = <String, dynamic>{
+        'nickname': _usernameController.text.trim(),
+        'bio': _introController.text.trim(),
       };
 
-      // 更新用户 metadata
-      await Supabase.instance.client.auth.updateUser(
-        UserAttributes(data: newMetadata),
-      );
-
-      // 主动获取最新用户信息以确保本地状态同步
-      try {
-        await Supabase.instance.client.auth.getUser();
-      } catch (_) {
-        // 忽略刷新错误（兼容性）
+      // avatar
+      if (_pickedAvatar != null) {
+        final mimeType =
+            lookupMimeType(_pickedAvatar!.name) ?? 'application/octet-stream';
+        final info = await _getUploadInfo(
+          p.basename(_pickedAvatar!.name),
+          mimeType,
+        );
+        final uploadUrl = info['uploadUrl'] ?? info['upload_url'];
+        final publicUrl = info['publicUrl'] ?? info['public_url'];
+        final bytes = await _readFileBytes(_pickedAvatar!);
+        await _uploadFileBytes(bytes, uploadUrl, mimeType);
+        updates['avatar_url'] = publicUrl;
       }
+
+      // cover
+      if (_pickedCover != null) {
+        final mimeType =
+            lookupMimeType(_pickedCover!.name) ?? 'application/octet-stream';
+        final info = await _getUploadInfo(
+          p.basename(_pickedCover!.name),
+          mimeType,
+        );
+        final uploadUrl = info['uploadUrl'] ?? info['upload_url'];
+        final publicUrl = info['publicUrl'] ?? info['public_url'];
+        final bytes = await _readFileBytes(_pickedCover!);
+        await _uploadFileBytes(bytes, uploadUrl, mimeType);
+        updates['background_url'] = publicUrl;
+      }
+
+      // video
+      if (_pickedVideo != null) {
+        final mimeType =
+            lookupMimeType(_pickedVideo!.name) ?? 'application/octet-stream';
+        final info = await _getUploadInfo(
+          p.basename(_pickedVideo!.name),
+          mimeType,
+        );
+        final uploadUrl = info['uploadUrl'] ?? info['upload_url'];
+        final publicUrl = info['publicUrl'] ?? info['public_url'];
+        final bytes = await _readFileBytes(_pickedVideo!);
+        await _uploadFileBytes(bytes, uploadUrl, mimeType);
+        updates['profile_video_url'] = publicUrl;
+      }
+
+      final res = await Supabase.instance.client
+          .from('user_profiles')
+          .update(updates)
+          .eq('id', user.id)
+          .select();
+      if (res == null) throw Exception('Update failed');
 
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('个人资料已保存')));
-        Navigator.pop(context);
+        ).showSnackBar(const SnackBar(content: Text('已保存')));
+        Navigator.of(context).pop(true); // signal updated
       }
     } catch (e) {
+      // Log full error for debugging
+      // Provide a user-friendly message for common cases (e.g., function not found)
+      debugPrint('EditProfilePage._save error: $e');
+      final errStr = e.toString();
+      String userMessage = '保存失败: $errStr';
+      if (errStr.contains('Edge Function 调用失败') ||
+          errStr.contains('Requested function was not found') ||
+          errStr.contains('status: 404') ||
+          errStr.contains('FunctionException')) {
+        userMessage =
+            "未找到 Edge Function 'get-oss-upload-url'（404）。请确认该函数已在 Supabase 控制台部署，或确认 `supabaseUrl` 指向正确的项目。";
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存失败: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text(userMessage), backgroundColor: Colors.red),
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('编辑个人资料')),
+      appBar: AppBar(title: const Text('编辑主页')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 昵称
-            Text('昵称', style: Theme.of(context).textTheme.titleMedium),
+            const Text('用户名', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             TextField(
-              controller: _nicknameController,
-              decoration: InputDecoration(
-                hintText: '输入昵称',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+              controller: _usernameController,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: '用户名',
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
 
-            // 年龄
-            Text('年龄', style: Theme.of(context).textTheme.titleMedium),
+            const Text('个性签名', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             TextField(
-              controller: _ageController,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                hintText: '输入年龄',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+              controller: _introController,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: '一句话介绍',
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
 
-            // 性别
-            Text('性别', style: Theme.of(context).textTheme.titleMedium),
+            // Avatar picker
+            const Text('头像', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            Container(
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey[400]!),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: DropdownButton<String>(
-                value: _selectedGender,
-                isExpanded: true,
-                underline: Container(),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                items:
-                    const [
-                          DropdownMenuItem(value: '男', child: Text('男')),
-                          DropdownMenuItem(value: '女', child: Text('女')),
-                          DropdownMenuItem(value: '其他', child: Text('其他')),
-                        ]
-                        .map(
-                          (item) => DropdownMenuItem(
-                            value: item.value,
-                            child: Padding(
-                              padding: EdgeInsets.zero,
-                              child: Text(item.value ?? ''),
-                            ),
-                          ),
-                        )
-                        .toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    setState(() => _selectedGender = value);
-                  }
-                },
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // 个人介绍
-            Text('个人介绍', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _bioController,
-              maxLines: 4,
-              decoration: InputDecoration(
-                hintText: '分享你的个人介绍',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+            Row(
+              children: [
+                _pickedAvatar != null
+                    ? (_pickedAvatar!.bytes != null
+                          ? Image.memory(
+                              _pickedAvatar!.bytes!,
+                              width: 80,
+                              height: 80,
+                              fit: BoxFit.cover,
+                            )
+                          : Image.file(
+                              File(_pickedAvatar!.path!),
+                              width: 80,
+                              height: 80,
+                              fit: BoxFit.cover,
+                            ))
+                    : (_avatarUrl != null && _avatarUrl!.isNotEmpty
+                          ? Image.network(
+                              _avatarUrl!,
+                              width: 80,
+                              height: 80,
+                              fit: BoxFit.cover,
+                            )
+                          : Container(
+                              width: 80,
+                              height: 80,
+                              color: Colors.grey[200],
+                              child: const Icon(Icons.person),
+                            )),
+                const SizedBox(width: 12),
+                ElevatedButton(
+                  onPressed: _pickAvatar,
+                  child: const Text('选择头像'),
                 ),
-              ),
+              ],
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 16),
 
-            // 保存按钮
+            // Cover picker
+            const Text('背景图', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _pickedCover != null
+                    ? (_pickedCover!.bytes != null
+                          ? Image.memory(
+                              _pickedCover!.bytes!,
+                              width: 120,
+                              height: 70,
+                              fit: BoxFit.cover,
+                            )
+                          : Image.file(
+                              File(_pickedCover!.path!),
+                              width: 120,
+                              height: 70,
+                              fit: BoxFit.cover,
+                            ))
+                    : (_coverUrl != null && _coverUrl!.isNotEmpty
+                          ? Image.network(
+                              _coverUrl!,
+                              width: 120,
+                              height: 70,
+                              fit: BoxFit.cover,
+                            )
+                          : Container(
+                              width: 120,
+                              height: 70,
+                              color: Colors.grey[200],
+                            )),
+                const SizedBox(width: 12),
+                ElevatedButton(
+                  onPressed: _pickCover,
+                  child: const Text('选择背景'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Video picker
+            const Text('视频', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _pickedVideo != null
+                    ? Text(p.basename(_pickedVideo!.name))
+                    : (_videoUrl != null && _videoUrl!.isNotEmpty
+                          ? const Text('已上传视频')
+                          : const Text('未上传')),
+                const SizedBox(width: 12),
+                ElevatedButton(
+                  onPressed: _pickVideo,
+                  child: const Text('选择视频'),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
               height: 48,
               child: ElevatedButton(
-                onPressed: _isSaving ? null : _saveProfile,
+                onPressed: _isSaving ? null : _save,
                 child: _isSaving
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
+                    ? const CircularProgressIndicator(color: Colors.white)
                     : const Text('保存'),
               ),
             ),

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../post_service.dart';
 import 'login_page.dart';
+import 'profile_page.dart';
+import 'edit_profile_page.dart';
 
 class PublishPostPage extends StatefulWidget {
   const PublishPostPage({super.key});
@@ -56,6 +58,11 @@ class _PublishPostPageState extends State<PublishPostPage> {
       );
       // 发布成功，返回并通知刷新
       Navigator.pop(context, true);
+      // Add navigation to ProfilePage
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => ProfilePage()),
+      );
     } catch (e) {
       final msg = e.toString();
       if (msg.contains('not_logged_in')) {

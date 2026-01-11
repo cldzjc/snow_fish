@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:video_player/video_player.dart';
+
 import 'login_page.dart';
 import 'register_page.dart';
 import 'my_products_page.dart';
@@ -13,35 +17,103 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  bool _isLoggedIn() {
-    return Supabase.instance.client.auth.currentSession != null;
-  }
+  bool _loading = true;
+  String _username = '';
+  String? _avatarUrl;
+  String? _coverUrl;
+  String _intro = '';
+  String? _videoUrl;
 
-  User? get _currentUser => Supabase.instance.client.auth.currentUser;
+  VideoPlayerController? _videoController;
+  Future<void>? _initVideoFuture;
+
+  bool _isLoggedIn() => Supabase.instance.client.auth.currentUser != null;
 
   @override
   void initState() {
     super.initState();
-    // 监听认证状态变化
-    Supabase.instance.client.auth.onAuthStateChange.listen((event) {
-      if (mounted) {
-        setState(() {}); // 当认证状态改变时刷新页面
-      }
+    _fetchUserProfile();
+    Supabase.instance.client.auth.onAuthStateChange.listen((_) {
+      if (mounted) setState(() {});
     });
+  }
+
+  @override
+  void dispose() {
+    _videoController?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchUserProfile() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) {
+      setState(() {
+        _loading = false;
+      });
+      return;
+    }
+
+    // Use current Supabase client API: maybeSingle() returns row or null
+    final res = await Supabase.instance.client
+        .from('user_profiles')
+        .select()
+        .eq('id', user.id)
+        .maybeSingle();
+
+    if (res == null) {
+      setState(() => _loading = false);
+      return;
+    }
+
+    final data = res as Map<String, dynamic>;
+
+    setState(() {
+      // Support both schemas: username <-> nickname, intro <-> bio,
+      // cover_url <-> background_url, video_url <-> profile_video_url
+      _username =
+          (data['username'] as String?) ?? (data['nickname'] as String?) ?? '';
+      _avatarUrl =
+          (data['avatar_url'] as String?) ?? (data['avatar'] as String?);
+      _coverUrl =
+          (data['cover_url'] as String?) ?? (data['background_url'] as String?);
+      _intro = (data['intro'] as String?) ?? (data['bio'] as String?) ?? '';
+      _videoUrl =
+          (data['video_url'] as String?) ??
+          (data['profile_video_url'] as String?);
+      _loading = false;
+    });
+
+    if (_videoUrl != null && _videoUrl!.isNotEmpty) {
+      _videoController = VideoPlayerController.network(_videoUrl!);
+      _initVideoFuture = _videoController!.initialize();
+      setState(() {});
+    }
+  }
+
+  Future<void> _openEdit() async {
+    final updated = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (context) => const EditProfilePage()),
+    );
+    if (updated == true) {
+      await _videoController?.pause();
+      _videoController?.dispose();
+      _videoController = null;
+      _initVideoFuture = null;
+      _fetchUserProfile();
+    }
   }
 
   Future<void> _signOut() async {
     try {
       await Supabase.instance.client.auth.signOut();
-      if (mounted) {
-        setState(() {}); // 刷新页面状态
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('已退出登录')));
-      }
+      if (mounted) setState(() {});
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已退出登录')));
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('退出登录失败: $e'), backgroundColor: Colors.red),
+        SnackBar(content: Text('退出失败: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -53,143 +125,166 @@ class _ProfilePageState extends State<ProfilePage> {
         title: const Text('我的'),
         actions: _isLoggedIn()
             ? [
-                IconButton(
-                  icon: const Icon(Icons.logout),
-                  onPressed: _signOut,
-                  tooltip: '退出登录',
-                ),
+                IconButton(onPressed: _openEdit, icon: const Icon(Icons.edit)),
+                IconButton(onPressed: _signOut, icon: const Icon(Icons.logout)),
               ]
             : null,
       ),
-      body: _isLoggedIn() ? _buildLoggedInView() : _buildLoggedOutView(),
-    );
-  }
-
-  Widget _buildLoggedInView() {
-    final user = _currentUser!;
-    final userName = user.userMetadata?['name'] ?? '用户';
-    final userEmail = user.email ?? '';
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        // 用户头像和基本信息
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _isLoggedIn()
+          ? ListView(
+              padding: const EdgeInsets.all(16),
               children: [
-                CircleAvatar(
-                  radius: 30,
-                  backgroundColor: Colors.blue,
-                  child: Text(
-                    userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
-                    style: const TextStyle(
-                      fontSize: 24,
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
+                // Profile header
+                Card(
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(
-                        userName,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
+                      // Cover
+                      SizedBox(
+                        height: 180,
+                        child: _coverUrl != null && _coverUrl!.isNotEmpty
+                            ? Image.network(
+                                _coverUrl!,
+                                fit: BoxFit.cover,
+                                loadingBuilder: (context, child, progress) {
+                                  if (progress == null) return child;
+                                  return Center(
+                                    child: CircularProgressIndicator(
+                                      value: progress.expectedTotalBytes != null
+                                          ? progress.cumulativeBytesLoaded /
+                                                progress.expectedTotalBytes!
+                                          : null,
+                                    ),
+                                  );
+                                },
+                                errorBuilder: (context, error, stack) {
+                                  debugPrint(
+                                    'Cover image load error: $error (url=$_coverUrl)',
+                                  );
+                                  return Container(
+                                    color: Colors.grey[200],
+                                    child: const Center(
+                                      child: Text(
+                                        '封面加载失败',
+                                        style: TextStyle(color: Colors.black54),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              )
+                            : Container(color: Colors.grey[200]),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 36,
+                              backgroundImage:
+                                  _avatarUrl != null && _avatarUrl!.isNotEmpty
+                                  ? NetworkImage(_avatarUrl!)
+                                  : null,
+                              child: (_avatarUrl == null || _avatarUrl!.isEmpty)
+                                  ? const Icon(Icons.person, size: 36)
+                                  : null,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _username,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(_intro),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        userEmail,
-                        style: const TextStyle(color: Colors.grey),
-                      ),
+                      if (_videoUrl != null &&
+                          _videoUrl!.isNotEmpty &&
+                          _videoController != null)
+                        Padding(
+                          padding: const EdgeInsets.all(12.0),
+                          child: FutureBuilder(
+                            future: _initVideoFuture,
+                            builder: (context, snapshot) {
+                              if (snapshot.connectionState ==
+                                  ConnectionState.done) {
+                                return AspectRatio(
+                                  aspectRatio:
+                                      _videoController!.value.aspectRatio,
+                                  child: Stack(
+                                    children: [
+                                      VideoPlayer(_videoController!),
+                                      GestureDetector(
+                                        onTap: () =>
+                                            _videoController!.value.isPlaying
+                                            ? _videoController!.pause()
+                                            : _videoController!.play(),
+                                        child: const Center(
+                                          child: Icon(
+                                            Icons.play_circle_fill,
+                                            size: 48,
+                                            color: Colors.white70,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              } else {
+                                return const SizedBox(
+                                  height: 160,
+                                  child: Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                        ),
                     ],
                   ),
                 ),
+
+                const SizedBox(height: 24),
+                const Text(
+                  '我的功能',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+
+                ListTile(
+                  leading: const Icon(Icons.inventory),
+                  title: const Text('我发布的商品'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const MyProductsPage(),
+                    ),
+                  ),
+                ),
+
+                ListTile(
+                  leading: const Icon(Icons.person),
+                  title: const Text('编辑个人资料'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _openEdit,
+                ),
               ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 24),
-
-        // 功能列表
-        const Text(
-          '我的功能',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-
-        ListTile(
-          leading: const Icon(Icons.inventory),
-          title: const Text('我发布的商品'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const MyProductsPage()),
-            );
-          },
-        ),
-
-        ListTile(
-          leading: const Icon(Icons.favorite),
-          title: const Text('我的收藏'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(const SnackBar(content: Text('功能开发中')));
-          },
-        ),
-
-        ListTile(
-          leading: const Icon(Icons.shopping_cart),
-          title: const Text('我的订单'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(const SnackBar(content: Text('功能开发中')));
-          },
-        ),
-
-        const SizedBox(height: 24),
-
-        // 设置选项
-        const Text(
-          '设置',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-
-        ListTile(
-          leading: const Icon(Icons.person),
-          title: const Text('编辑个人资料'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const EditProfilePage()),
-            );
-          },
-        ),
-
-        ListTile(
-          leading: const Icon(Icons.notifications),
-          title: const Text('通知设置'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(const SnackBar(content: Text('功能开发中')));
-          },
-        ),
-      ],
+            )
+          : _buildLoggedOutView(),
     );
   }
 
@@ -213,42 +308,31 @@ class _ProfilePageState extends State<ProfilePage> {
               style: TextStyle(color: Colors.grey),
             ),
             const SizedBox(height: 32),
-
-            // 登录按钮
             SizedBox(
               width: double.infinity,
               height: 48,
               child: ElevatedButton.icon(
                 icon: const Icon(Icons.login),
                 label: const Text('登录账户'),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const LoginPage()),
-                  );
-                },
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LoginPage()),
+                ),
               ),
             ),
             const SizedBox(height: 16),
-
-            // 注册按钮
             SizedBox(
               width: double.infinity,
               height: 48,
               child: OutlinedButton.icon(
                 icon: const Icon(Icons.person_add),
                 label: const Text('创建账户'),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const RegisterPage(),
-                    ),
-                  );
-                },
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const RegisterPage()),
+                ),
               ),
             ),
-
             const SizedBox(height: 32),
             const Text(
               '登录后享受更多功能',
