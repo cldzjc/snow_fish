@@ -6,8 +6,25 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
+import 'package:image/image.dart' as img;
 import 'package:mime/mime.dart';
 import 'package:path/path.dart' as p;
+import 'package:flutter/foundation.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+
+// Top-level function for compute to compress images in a background isolate
+Uint8List _compressImageIsolate(Map<String, dynamic> args) {
+  final String path = args['path'] as String;
+  final int quality = args['quality'] as int;
+  final int maxWidth = args['maxWidth'] as int;
+
+  final bytes = File(path).readAsBytesSync();
+  final image = img.decodeImage(bytes);
+  if (image == null) return bytes;
+  final resized = img.copyResize(image, width: maxWidth);
+  return Uint8List.fromList(img.encodeJpg(resized, quality: quality));
+}
 
 /// EditProfilePage
 /// - Fetches current user's row in `user_profiles`
@@ -127,20 +144,45 @@ class _EditProfilePageState extends State<EditProfilePage> {
     }
   }
 
-  Future<String> _uploadFileBytes(
+  bool _isImageFile(PlatformFile file) {
+    final mime = lookupMimeType(file.name) ?? '';
+    return mime.startsWith('image/');
+  }
+
+  // Upload using Dio and show progress updates via SnackBar
+  Future<void> _uploadFileBytes(
     Uint8List bytes,
     String uploadUrl,
     String contentType,
+    String label,
   ) async {
-    final putResp = await http.put(
-      Uri.parse(uploadUrl),
-      headers: {'content-type': contentType},
-      body: bytes,
-    );
-    if (putResp.statusCode >= 200 && putResp.statusCode < 300) {
-      return 'ok';
+    final dio = Dio();
+    try {
+      // Show initial snack
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$label 上传: 0%'), duration: const Duration(hours: 1)),
+      );
+
+      await dio.put(
+        uploadUrl,
+        data: bytes,
+        options: Options(headers: {'content-type': contentType}),
+        onSendProgress: (int sent, int total) {
+          final percent = total > 0 ? (sent / total * 100).toStringAsFixed(0) : '0';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('$label 上传: $percent%'), duration: const Duration(seconds: 2)),
+          );
+        },
+      );
+
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$label 上传完成'), duration: const Duration(seconds: 2)),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      throw Exception('Upload failed: $e');
     }
-    throw Exception('Upload failed: ${putResp.statusCode}');
   }
 
   // Read bytes from PlatformFile; prefer in-memory bytes, fallback to reading from path
@@ -177,8 +219,18 @@ class _EditProfilePageState extends State<EditProfilePage> {
         );
         final uploadUrl = info['uploadUrl'] ?? info['upload_url'];
         final publicUrl = info['publicUrl'] ?? info['public_url'];
-        final bytes = await _readFileBytes(_pickedAvatar!);
-        await _uploadFileBytes(bytes, uploadUrl, mimeType);
+        Uint8List bytes;
+        if (_isImageFile(_pickedAvatar!) && _pickedAvatar!.path != null) {
+          // compress avatar to small width (e.g., 400px) in background isolate
+          bytes = await compute(_compressImageIsolate, {
+            'path': _pickedAvatar!.path!,
+            'quality': 80,
+            'maxWidth': 400,
+          });
+        } else {
+          bytes = await _readFileBytes(_pickedAvatar!);
+        }
+        await _uploadFileBytes(bytes, uploadUrl, mimeType, '头像');
         updates['avatar_url'] = publicUrl;
       }
 
@@ -192,8 +244,18 @@ class _EditProfilePageState extends State<EditProfilePage> {
         );
         final uploadUrl = info['uploadUrl'] ?? info['upload_url'];
         final publicUrl = info['publicUrl'] ?? info['public_url'];
-        final bytes = await _readFileBytes(_pickedCover!);
-        await _uploadFileBytes(bytes, uploadUrl, mimeType);
+        Uint8List bytes;
+        if (_isImageFile(_pickedCover!) && _pickedCover!.path != null) {
+          // compress cover to larger width (e.g., 1080px) in background isolate
+          bytes = await compute(_compressImageIsolate, {
+            'path': _pickedCover!.path!,
+            'quality': 80,
+            'maxWidth': 1080,
+          });
+        } else {
+          bytes = await _readFileBytes(_pickedCover!);
+        }
+        await _uploadFileBytes(bytes, uploadUrl, mimeType, '背景');
         updates['background_url'] = publicUrl;
       }
 
@@ -208,7 +270,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         final uploadUrl = info['uploadUrl'] ?? info['upload_url'];
         final publicUrl = info['publicUrl'] ?? info['public_url'];
         final bytes = await _readFileBytes(_pickedVideo!);
-        await _uploadFileBytes(bytes, uploadUrl, mimeType);
+        await _uploadFileBytes(bytes, uploadUrl, mimeType, '视频');
         updates['profile_video_url'] = publicUrl;
       }
 
@@ -301,11 +363,23 @@ class _EditProfilePageState extends State<EditProfilePage> {
                               fit: BoxFit.cover,
                             ))
                     : (_avatarUrl != null && _avatarUrl!.isNotEmpty
-                          ? Image.network(
-                              _avatarUrl!,
+                          ? CachedNetworkImage(
+                              imageUrl: _avatarUrl!,
                               width: 80,
                               height: 80,
                               fit: BoxFit.cover,
+                              placeholder: (context, url) => Container(
+                                width: 80,
+                                height: 80,
+                                color: Colors.grey[200],
+                                child: const Center(child: CircularProgressIndicator()),
+                              ),
+                              errorWidget: (context, url, error) => Container(
+                                width: 80,
+                                height: 80,
+                                color: Colors.grey[200],
+                                child: const Icon(Icons.person),
+                              ),
                             )
                           : Container(
                               width: 80,
@@ -342,11 +416,22 @@ class _EditProfilePageState extends State<EditProfilePage> {
                               fit: BoxFit.cover,
                             ))
                     : (_coverUrl != null && _coverUrl!.isNotEmpty
-                          ? Image.network(
-                              _coverUrl!,
+                          ? CachedNetworkImage(
+                              imageUrl: _coverUrl!,
                               width: 120,
                               height: 70,
                               fit: BoxFit.cover,
+                              placeholder: (context, url) => Container(
+                                width: 120,
+                                height: 70,
+                                color: Colors.grey[200],
+                                child: const Center(child: CircularProgressIndicator()),
+                              ),
+                              errorWidget: (context, url, error) => Container(
+                                width: 120,
+                                height: 70,
+                                color: Colors.grey[200],
+                              ),
                             )
                           : Container(
                               width: 120,

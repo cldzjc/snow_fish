@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:video_player/video_player.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import 'login_page.dart';
 import 'register_page.dart';
@@ -145,31 +146,16 @@ class _ProfilePageState extends State<ProfilePage> {
                       SizedBox(
                         height: 180,
                         child: _coverUrl != null && _coverUrl!.isNotEmpty
-                            ? Image.network(
-                                _coverUrl!,
+                            ? CachedNetworkImage(
+                                imageUrl: _coverUrl!,
                                 fit: BoxFit.cover,
-                                loadingBuilder: (context, child, progress) {
-                                  if (progress == null) return child;
-                                  return Center(
-                                    child: CircularProgressIndicator(
-                                      value: progress.expectedTotalBytes != null
-                                          ? progress.cumulativeBytesLoaded /
-                                                progress.expectedTotalBytes!
-                                          : null,
-                                    ),
-                                  );
-                                },
-                                errorBuilder: (context, error, stack) {
-                                  debugPrint(
-                                    'Cover image load error: $error (url=$_coverUrl)',
-                                  );
+                                placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+                                errorWidget: (context, url, error) {
+                                  debugPrint('Cover image load error: $error (url=$_coverUrl)');
                                   return Container(
                                     color: Colors.grey[200],
                                     child: const Center(
-                                      child: Text(
-                                        '封面加载失败',
-                                        style: TextStyle(color: Colors.black54),
-                                      ),
+                                      child: Text('封面加载失败', style: TextStyle(color: Colors.black54)),
                                     ),
                                   );
                                 },
@@ -182,9 +168,8 @@ class _ProfilePageState extends State<ProfilePage> {
                           children: [
                             CircleAvatar(
                               radius: 36,
-                              backgroundImage:
-                                  _avatarUrl != null && _avatarUrl!.isNotEmpty
-                                  ? NetworkImage(_avatarUrl!)
+                              backgroundImage: _avatarUrl != null && _avatarUrl!.isNotEmpty
+                                  ? CachedNetworkImageProvider(_avatarUrl!)
                                   : null,
                               child: (_avatarUrl == null || _avatarUrl!.isEmpty)
                                   ? const Icon(Icons.person, size: 36)
