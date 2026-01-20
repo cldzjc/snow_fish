@@ -21,6 +21,7 @@ dependencies:
   cached_network_image: ^3.3.0
   google_fonts: ^6.1.0
   lucide_icons: ^0.257.0
+  photo_view: ^0.14.0
 
   # File upload / media
   file_picker: ^10.3.8
@@ -30,6 +31,7 @@ dependencies:
   image: ^4.0.17
   mime: ^1.0.2
   path: ^1.8.3
+  video_thumbnail: ^0.5.0
 
 dev_dependencies:
   flutter_test:

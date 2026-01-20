@@ -9,6 +9,7 @@ import 'login_page.dart';
 import 'register_page.dart';
 import 'my_products_page.dart';
 import 'edit_profile_page.dart';
+import 'my_videos_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -149,13 +150,20 @@ class _ProfilePageState extends State<ProfilePage> {
                             ? CachedNetworkImage(
                                 imageUrl: _coverUrl!,
                                 fit: BoxFit.cover,
-                                placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+                                placeholder: (context, url) => const Center(
+                                  child: CircularProgressIndicator(),
+                                ),
                                 errorWidget: (context, url, error) {
-                                  debugPrint('Cover image load error: $error (url=$_coverUrl)');
+                                  debugPrint(
+                                    'Cover image load error: $error (url=$_coverUrl)',
+                                  );
                                   return Container(
                                     color: Colors.grey[200],
                                     child: const Center(
-                                      child: Text('封面加载失败', style: TextStyle(color: Colors.black54)),
+                                      child: Text(
+                                        '封面加载失败',
+                                        style: TextStyle(color: Colors.black54),
+                                      ),
                                     ),
                                   );
                                 },
@@ -168,7 +176,8 @@ class _ProfilePageState extends State<ProfilePage> {
                           children: [
                             CircleAvatar(
                               radius: 36,
-                              backgroundImage: _avatarUrl != null && _avatarUrl!.isNotEmpty
+                              backgroundImage:
+                                  _avatarUrl != null && _avatarUrl!.isNotEmpty
                                   ? CachedNetworkImageProvider(_avatarUrl!)
                                   : null,
                               child: (_avatarUrl == null || _avatarUrl!.isEmpty)
@@ -257,6 +266,17 @@ class _ProfilePageState extends State<ProfilePage> {
                     context,
                     MaterialPageRoute(
                       builder: (context) => const MyProductsPage(),
+                    ),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.video_collection),
+                  title: const Text('我的视频'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const MyVideosPage(),
                     ),
                   ),
                 ),

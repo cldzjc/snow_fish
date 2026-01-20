@@ -1,7 +1,16 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:dio/dio.dart';
+import 'package:image/image.dart' as img;
+import 'package:mime/mime.dart';
+import 'package:flutter/foundation.dart';
 import '../config.dart';
 import '../product_service.dart';
+import '../media_service.dart';
 import 'login_page.dart';
 
 class PublishPage extends StatefulWidget {
@@ -12,21 +21,11 @@ class PublishPage extends StatefulWidget {
 }
 
 class _PublishPageState extends State<PublishPage> {
+  final _titleController = TextEditingController(); // 商品标题
   final _contentController = TextEditingController(); // 正文内容
   final _priceController = TextEditingController(); // 价格
-  String? _selectedImage; // 选中的图片URL
-
+  List<PlatformFile> _pickedImages = []; // 选中的图片文件
   bool _isLoading = false;
-
-  // 预设图片选项（简化版，实际可以做图片上传）
-  final List<String> _presetImages = [
-    'https://picsum.photos/400/300?random=1',
-    'https://picsum.photos/400/300?random=2',
-    'https://picsum.photos/400/300?random=3',
-    'https://picsum.photos/400/300?random=4',
-    'https://picsum.photos/400/300?random=5',
-    'https://picsum.photos/400/300?random=6',
-  ];
 
   // 检查登录状态
   bool _isLoggedIn() {
@@ -50,10 +49,10 @@ class _PublishPageState extends State<PublishPage> {
       }
     }
 
-    if (_contentController.text.isEmpty ||
+    if (_titleController.text.isEmpty ||
         _priceController.text.isEmpty ||
-        _selectedImage == null) {
-      _showSnackbar('请填写正文、价格并选择图片', Colors.orange);
+        _pickedImages.isEmpty) {
+      _showSnackbar('请填写标题、价格并选择图片', Colors.orange);
       return;
     }
 
@@ -67,11 +66,11 @@ class _PublishPageState extends State<PublishPage> {
         final id = 'local-${DateTime.now().millisecondsSinceEpoch}';
         localProducts.insert(0, {
           'id': id,
-          'title': _contentController.text.length > 20
-              ? '${_contentController.text.substring(0, 20)}...'
-              : _contentController.text, // 正文作为标题
+          'title': _titleController.text, // 使用标题字段
           'price': double.tryParse(_priceController.text) ?? 0.0,
-          'image': _selectedImage,
+          'image': _pickedImages.isNotEmpty
+              ? 'local-image-${_pickedImages.length}'
+              : null,
           'location': '未知地点', // 简化为默认值
           'selleravatar':
               'https://api.dicebear.com/7.x/avataaars/svg?seed=NewUser',
@@ -96,18 +95,28 @@ class _PublishPageState extends State<PublishPage> {
             : 'https://api.dicebear.com/7.x/avataaars/png?seed=NewUser';
 
         try {
+          // 1. 创建商品记录（不包含图片URL）
           final result = await ProductService().createProduct(
-            title: _contentController.text.length > 20
-                ? '${_contentController.text.substring(0, 20)}...'
-                : _contentController.text, // 正文前20字作为标题
+            title: _titleController.text, // 使用标题字段
             price: double.tryParse(_priceController.text) ?? 0.0,
             location: '未知地点', // 简化版本，固定值
             sellerName: sellerName,
             sellerAvatar: sellerAvatar,
-            image: _selectedImage!, // 用户选择的图片
+            image: '', // 不再直接存储图片URL到products表
             description: _contentController.text, // 正文作为描述
           );
           print('发布成功，返回的商品数据: $result');
+
+          final productId = result['id'] as String;
+          print('商品ID: $productId');
+
+          // 2. 上传图片并保存到media表
+          await MediaService().uploadImagesForOwner(
+            userId: currentUser!.id,
+            ownerType: 'product',
+            ownerId: productId,
+            files: _pickedImages,
+          );
 
           // 发布成功后返回并通知刷新
           if (mounted) Navigator.pop(context, true);
@@ -126,10 +135,11 @@ class _PublishPageState extends State<PublishPage> {
       }
 
       // 清空表单
+      _titleController.clear();
       _contentController.clear();
       _priceController.clear();
       setState(() {
-        _selectedImage = null;
+        _pickedImages = [];
       });
 
       _showSnackbar('商品发布成功！首页已实时更新', Colors.green);
@@ -151,6 +161,20 @@ class _PublishPageState extends State<PublishPage> {
         duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  // 选择图片
+  Future<void> _pickImages() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      allowMultiple: true,
+      compressionQuality: 100, // 不压缩，我们将手动压缩
+    );
+    if (result != null && result.files.isNotEmpty) {
+      setState(() {
+        _pickedImages = result.files;
+      });
+    }
   }
 
   @override
@@ -188,82 +212,55 @@ class _PublishPageState extends State<PublishPage> {
                 border: Border.all(color: Colors.grey[300]!),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: _selectedImage != null
-                  ? Stack(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.network(
-                            _selectedImage!,
-                            width: double.infinity,
-                            height: 120,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        Positioned(
-                          top: 8,
-                          right: 8,
-                          child: IconButton(
-                            onPressed: () {
-                              setState(() {
-                                _selectedImage = null;
-                              });
-                            },
-                            icon: const Icon(
-                              Icons.close,
-                              color: Colors.white,
-                              shadows: [Shadow(blurRadius: 4)],
-                            ),
-                          ),
-                        ),
-                      ],
-                    )
-                  : InkWell(
-                      onTap: () {
-                        // 显示图片选择对话框
-                        showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('选择图片'),
-                            content: SizedBox(
-                              width: double.maxFinite,
-                              height: 200,
-                              child: GridView.builder(
-                                gridDelegate:
-                                    const SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: 3,
-                                      crossAxisSpacing: 8,
-                                      mainAxisSpacing: 8,
-                                    ),
-                                itemCount: _presetImages.length,
-                                itemBuilder: (context, index) {
-                                  return InkWell(
-                                    onTap: () {
-                                      setState(() {
-                                        _selectedImage = _presetImages[index];
-                                      });
-                                      Navigator.of(context).pop();
-                                    },
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: Image.network(
-                                        _presetImages[index],
+              child: _pickedImages.isNotEmpty
+                  ? ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _pickedImages.length,
+                      itemBuilder: (context, index) {
+                        final file = _pickedImages[index];
+                        return Stack(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: file.bytes != null
+                                    ? Image.memory(
+                                        file.bytes!,
+                                        width: 104,
+                                        height: 104,
+                                        fit: BoxFit.cover,
+                                      )
+                                    : Image.file(
+                                        File(file.path!),
+                                        width: 104,
+                                        height: 104,
                                         fit: BoxFit.cover,
                                       ),
-                                    ),
-                                  );
-                                },
                               ),
                             ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.of(context).pop(),
-                                child: const Text('取消'),
+                            Positioned(
+                              top: 0,
+                              right: 0,
+                              child: IconButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _pickedImages.removeAt(index);
+                                  });
+                                },
+                                icon: const Icon(
+                                  Icons.close,
+                                  color: Colors.red,
+                                  size: 18,
+                                ),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         );
                       },
+                    )
+                  : InkWell(
+                      onTap: _pickImages,
                       child: const Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -275,7 +272,7 @@ class _PublishPageState extends State<PublishPage> {
                             ),
                             SizedBox(height: 8),
                             Text(
-                              '点击选择图片',
+                              '点击选择图片（支持多图）',
                               style: TextStyle(color: Colors.grey),
                             ),
                           ],
@@ -285,12 +282,23 @@ class _PublishPageState extends State<PublishPage> {
             ),
             const SizedBox(height: 16),
 
-            // 2. 正文输入
+            // 2. 标题输入
+            TextField(
+              controller: _titleController,
+              decoration: const InputDecoration(
+                labelText: '商品标题 (必填)',
+                border: OutlineInputBorder(),
+                hintText: '输入商品标题...',
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // 3. 正文输入
             TextField(
               controller: _contentController,
               maxLines: 5,
               decoration: const InputDecoration(
-                labelText: '正文内容 (必填)',
+                labelText: '商品描述 (可选)',
                 border: OutlineInputBorder(),
                 hintText: '描述你的商品...',
                 alignLabelWithHint: true,
@@ -348,6 +356,7 @@ class _PublishPageState extends State<PublishPage> {
 
   @override
   void dispose() {
+    _titleController.dispose();
     _contentController.dispose();
     _priceController.dispose();
     super.dispose();

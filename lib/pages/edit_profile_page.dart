@@ -49,7 +49,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   PlatformFile? _pickedAvatar;
   PlatformFile? _pickedCover;
-  PlatformFile? _pickedVideo;
 
   bool _isSaving = false;
 
@@ -106,13 +105,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
     }
   }
 
-  Future<void> _pickVideo() async {
-    final result = await FilePicker.platform.pickFiles(type: FileType.video);
-    if (result != null && result.files.isNotEmpty) {
-      setState(() => _pickedVideo = result.files.first);
-    }
-  }
-
   /// Calls edge function to get uploadUrl and publicUrl
   Future<Map<String, dynamic>> _getUploadInfo(
     String filename,
@@ -157,27 +149,34 @@ class _EditProfilePageState extends State<EditProfilePage> {
     String label,
   ) async {
     final dio = Dio();
+    final headers = {
+      'content-type': contentType,
+      'content-length': bytes.length.toString(),
+    };
+
     try {
-      // Show initial snack
+      // Simple indeterminate uploading message (no percent)
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$label 上传: 0%'), duration: const Duration(hours: 1)),
+        SnackBar(
+          content: Text('$label 上传中...'),
+          duration: const Duration(hours: 1),
+        ),
       );
 
+      // Upload as a stream with content-length so servers/clients can handle it efficiently
+      final stream = Stream.fromIterable([bytes]);
       await dio.put(
         uploadUrl,
-        data: bytes,
-        options: Options(headers: {'content-type': contentType}),
-        onSendProgress: (int sent, int total) {
-          final percent = total > 0 ? (sent / total * 100).toStringAsFixed(0) : '0';
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('$label 上传: $percent%'), duration: const Duration(seconds: 2)),
-          );
-        },
+        data: stream,
+        options: Options(headers: headers),
       );
 
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$label 上传完成'), duration: const Duration(seconds: 2)),
+        SnackBar(
+          content: Text('$label 上传完成'),
+          duration: const Duration(seconds: 2),
+        ),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -257,21 +256,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
         }
         await _uploadFileBytes(bytes, uploadUrl, mimeType, '背景');
         updates['background_url'] = publicUrl;
-      }
-
-      // video
-      if (_pickedVideo != null) {
-        final mimeType =
-            lookupMimeType(_pickedVideo!.name) ?? 'application/octet-stream';
-        final info = await _getUploadInfo(
-          p.basename(_pickedVideo!.name),
-          mimeType,
-        );
-        final uploadUrl = info['uploadUrl'] ?? info['upload_url'];
-        final publicUrl = info['publicUrl'] ?? info['public_url'];
-        final bytes = await _readFileBytes(_pickedVideo!);
-        await _uploadFileBytes(bytes, uploadUrl, mimeType, '视频');
-        updates['profile_video_url'] = publicUrl;
       }
 
       final res = await Supabase.instance.client
@@ -372,7 +356,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
                                 width: 80,
                                 height: 80,
                                 color: Colors.grey[200],
-                                child: const Center(child: CircularProgressIndicator()),
+                                child: const Center(
+                                  child: CircularProgressIndicator(),
+                                ),
                               ),
                               errorWidget: (context, url, error) => Container(
                                 width: 80,
@@ -425,7 +411,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
                                 width: 120,
                                 height: 70,
                                 color: Colors.grey[200],
-                                child: const Center(child: CircularProgressIndicator()),
+                                child: const Center(
+                                  child: CircularProgressIndicator(),
+                                ),
                               ),
                               errorWidget: (context, url, error) => Container(
                                 width: 120,
@@ -447,25 +435,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
             ),
             const SizedBox(height: 16),
 
-            // Video picker
-            const Text('视频', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                _pickedVideo != null
-                    ? Text(p.basename(_pickedVideo!.name))
-                    : (_videoUrl != null && _videoUrl!.isNotEmpty
-                          ? const Text('已上传视频')
-                          : const Text('未上传')),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  onPressed: _pickVideo,
-                  child: const Text('选择视频'),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
               height: 48,

@@ -195,13 +195,20 @@ class _HomePageState extends State<HomePage>
       );
     }
 
-    // Supabase 模式：使用 Realtime 流
+    // Supabase 模式：使用带图片的 Realtime 流，带降级机制
     return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: ProductService().getProductsStream(),
+      stream: ProductService().getProductsWithImagesStream(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           final msg = snapshot.error?.toString() ?? '';
           print('Supabase Stream Error: $msg'); // 添加调试信息
+
+          // 如果是Realtime超时错误，降级到普通查询
+          if (msg.contains('realtime_timeout') ||
+              msg.contains('RealtimeSubscribeException') ||
+              msg.contains('timedOut')) {
+            return _buildFallbackProductList();
+          }
 
           String display = '加载失败，请检查网络连接';
           if (msg.contains('network:') ||
@@ -234,6 +241,86 @@ class _HomePageState extends State<HomePage>
 
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
+        }
+
+        final products = snapshot.data!
+            .map((data) => Product.fromMap(data))
+            .toList();
+
+        if (products.isEmpty) {
+          return const Center(child: Text('暂无商品发布'));
+        }
+
+        return MasonryGridView.count(
+          padding: const EdgeInsets.all(12),
+          crossAxisCount: 2,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          itemCount: products.length,
+          itemBuilder: (context, index) =>
+              _buildProductCard(context, products[index]),
+        );
+      },
+    );
+  }
+
+  // 降级方案：当Realtime连接失败时使用普通查询
+  Widget _buildFallbackProductList() {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: ProductService().getProductsWithImages(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          final msg = snapshot.error?.toString() ?? '';
+          String display = '加载失败，请检查网络连接';
+          if (msg.contains('network:') ||
+              msg.contains('Failed host lookup') ||
+              msg.contains('SocketException')) {
+            display = '网络连接失败，请检查模拟器或主机网络设置';
+          } else if (msg.contains('permission:') ||
+              msg.contains('403') ||
+              msg.contains('forbidden')) {
+            display = '权限错误：无法加载商品，请检查 Supabase RLS 策略';
+          }
+
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.wifi_off, size: 48, color: Colors.grey),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Realtime连接超时',
+                    style: const TextStyle(color: Colors.grey, fontSize: 16),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    display,
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: () => setState(() {}),
+                    child: const Text('重试'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        if (!snapshot.hasData) {
+          return const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 12),
+                Text('正在加载商品...', style: TextStyle(color: Colors.grey)),
+              ],
+            ),
+          );
         }
 
         final products = snapshot.data!
