@@ -42,18 +42,10 @@ class _MyVideosPageState extends State<MyVideosPage> {
         .eq('owner_id', user.id)
         .order('sort_order', ascending: true);
 
-    if (res is List) {
-      setState(() {
-        _videos = List<Map<String, dynamic>>.from(
-          res.cast<Map<String, dynamic>>(),
-        );
-        _loading = false;
-      });
-      return;
-    }
-
     setState(() {
-      _videos = [];
+      _videos = List<Map<String, dynamic>>.from(
+        (res as List? ?? []).cast<Map<String, dynamic>>(),
+      );
       _loading = false;
     });
   }
@@ -207,8 +199,9 @@ class _MyVideosPageState extends State<MyVideosPage> {
           .select()
           .eq('id', id)
           .maybeSingle();
-      final row = res as Map<String, dynamic>?;
-      String? publicUrl = row != null ? (row['url'] as String?) : null;
+      final row = res;
+      String? publicUrl =
+          (row?['url'] as String?) ?? (row?['public_url'] as String?);
 
       if (publicUrl != null && publicUrl.isNotEmpty) {
         try {

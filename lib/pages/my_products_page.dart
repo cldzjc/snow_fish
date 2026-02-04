@@ -3,7 +3,7 @@ import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../product_service.dart';
+import '../services/entity_service.dart';
 import 'home_page.dart'; // 使用已有的 Product 数据类
 import 'product_detail_page.dart';
 import 'login_page.dart';
@@ -30,8 +30,11 @@ class _MyProductsPageState extends State<MyProductsPage> {
       throw Exception('not_logged_in');
     }
 
-    final raw = await ProductService().getProductsByUser(user.id);
-    return raw.map((m) => Product.fromMap(m)).toList();
+    final entities = await EntityService().fetchUserEntities(
+      userId: user.id,
+      type: 'product',
+    );
+    return entities.map((e) => Product.fromEntity(e)).toList();
   }
 
   @override
@@ -138,7 +141,9 @@ class _MyProductsPageState extends State<MyProductsPage> {
                 height: 160,
                 width: double.infinity,
                 child: CachedNetworkImage(
-                  imageUrl: product.image,
+                  imageUrl:
+                      product.image ??
+                      'https://picsum.photos/seed/placeholder/500/500',
                   fit: BoxFit.cover,
                   placeholder: (context, url) => Container(
                     color: Colors.grey[200],
@@ -198,11 +203,14 @@ class _MyProductsPageState extends State<MyProductsPage> {
                     children: [
                       CircleAvatar(
                         radius: 8,
-                        backgroundImage: NetworkImage(product.sellerAvatar),
+                        backgroundImage: NetworkImage(
+                          product.sellerAvatar ??
+                              'https://picsum.photos/seed/avatar/200/200',
+                        ),
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        product.sellerName,
+                        product.sellerName ?? '未知卖家',
                         style: const TextStyle(
                           color: Color.fromARGB(255, 174, 74, 74),
                           fontSize: 10,

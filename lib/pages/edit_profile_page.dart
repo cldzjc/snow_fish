@@ -1,11 +1,9 @@
-import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:http/http.dart' as http;
 import 'package:dio/dio.dart';
 import 'package:image/image.dart' as img;
 import 'package:mime/mime.dart';
@@ -45,7 +43,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   String? _avatarUrl;
   String? _coverUrl;
-  String? _videoUrl;
 
   PlatformFile? _pickedAvatar;
   PlatformFile? _pickedCover;
@@ -69,25 +66,24 @@ class _EditProfilePageState extends State<EditProfilePage> {
         .maybeSingle();
 
     if (res != null) {
-      final data = res as Map<String, dynamic>;
-      setState(() {
-        // Support both old/new column names: username <-> nickname, intro <-> bio,
-        // cover_url <-> background_url, video_url <-> profile_video_url
-        _usernameController.text =
-            (data['username'] as String?) ??
-            (data['nickname'] as String?) ??
-            '';
-        _introController.text =
-            (data['intro'] as String?) ?? (data['bio'] as String?) ?? '';
-        _avatarUrl =
-            (data['avatar_url'] as String?) ?? (data['avatar'] as String?);
-        _coverUrl =
-            (data['cover_url'] as String?) ??
-            (data['background_url'] as String?);
-        _videoUrl =
-            (data['video_url'] as String?) ??
-            (data['profile_video_url'] as String?);
-      });
+      final data = res as Map<String, dynamic>?;
+      if (data != null) {
+        setState(() {
+          // Support both old/new column names: username <-> nickname, intro <-> bio,
+          // cover_url <-> background_url, video_url <-> profile_video_url
+          _usernameController.text =
+              (data['username'] as String?) ??
+              (data['nickname'] as String?) ??
+              '';
+          _introController.text =
+              (data['intro'] as String?) ?? (data['bio'] as String?) ?? '';
+          _avatarUrl =
+              (data['avatar_url'] as String?) ?? (data['avatar'] as String?);
+          _coverUrl =
+              (data['cover_url'] as String?) ??
+              (data['background_url'] as String?);
+        });
+      }
     }
   }
 
@@ -110,28 +106,48 @@ class _EditProfilePageState extends State<EditProfilePage> {
     String filename,
     String contentType,
   ) async {
-    // Edge Function expects `filename` and `contentType` as keys
-    final body = jsonEncode({
+    final user = Supabase.instance.client.auth.currentUser;
+
+    if (user == null) {
+      throw Exception('用户会话已过期，请重新登录');
+    }
+
+    debugPrint('📤 发送请求到 get-oss-upload-url 函数');
+    debugPrint('   文件名: $filename');
+    debugPrint('   ContentType: $contentType');
+    debugPrint('   UserId: ${user.id}');
+
+    // Edge Function expects `filename`, `contentType`, `owner_type`, `owner_id`
+    final body = {
       'filename': filename,
       'contentType': contentType,
-      'owner_type': 'user_profiles',
-      'owner_id': Supabase.instance.client.auth.currentUser!.id,
-    });
+      'owner_type': 'avatar',
+      'owner_id': user.id,
+    };
 
     try {
       final resp = await Supabase.instance.client.functions.invoke(
         'get-oss-upload-url',
         body: body,
       );
-      // Expect function return shape: {"uploadUrl": "...", "publicUrl": "..."}
+
+      // Expect function return shape: {"uploadUrl": "...", "publicUrl": "...", "objectKey": "..."}
       final data = resp.data as Map<String, dynamic>?;
-      if (data == null) throw Exception('Edge function returned no data');
+      if (data == null) throw Exception('Edge function 返回空数据');
+
+      debugPrint('✅ 成功获取上传 URL');
+      debugPrint('   ObjectKey: ${data['objectKey']}');
       return data;
     } on FunctionException catch (fe) {
+      debugPrint('❌ FunctionException 状态码: ${fe.status}');
+      debugPrint('❌ FunctionException 详情: ${fe.toString()}');
+
       throw Exception(
-        "Edge Function 调用失败 (${fe.status}): ${fe.toString()}. 请确认函数名 'get-oss-upload-url' 已部署并可用。",
+        "Edge Function 调用失败 (${fe.status}): ${fe.toString()}. "
+        "请确认函数名 'get-oss-upload-url' 已部署并可用。",
       );
     } catch (e) {
+      debugPrint('❌ 未知错误: $e');
       throw Exception('调用 Edge Function 失败: $e');
     }
   }
@@ -218,6 +234,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
         );
         final uploadUrl = info['uploadUrl'] ?? info['upload_url'];
         final publicUrl = info['publicUrl'] ?? info['public_url'];
+
+        debugPrint('🖼️ Avatar upload info:');
+        debugPrint('   uploadUrl: $uploadUrl');
+        debugPrint('   publicUrl: $publicUrl');
+        debugPrint('   objectKey: ${info['objectKey']}');
+
         Uint8List bytes;
         if (_isImageFile(_pickedAvatar!) && _pickedAvatar!.path != null) {
           // compress avatar to small width (e.g., 400px) in background isolate
@@ -231,6 +253,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         }
         await _uploadFileBytes(bytes, uploadUrl, mimeType, '头像');
         updates['avatar_url'] = publicUrl;
+        debugPrint('✅ Avatar 已上传，将保存 URL: $publicUrl');
       }
 
       // cover
@@ -258,12 +281,33 @@ class _EditProfilePageState extends State<EditProfilePage> {
         updates['background_url'] = publicUrl;
       }
 
-      final res = await Supabase.instance.client
+      // 确保表中存在该用户的行
+      final existingRow = await Supabase.instance.client
           .from('user_profiles')
-          .update(updates)
+          .select()
           .eq('id', user.id)
-          .select();
-      if (res == null) throw Exception('Update failed');
+          .maybeSingle();
+
+      if (existingRow == null) {
+        // 如果行不存在，先插入一行
+        debugPrint('ℹ️ user_profiles 中不存在该用户，创建新行...');
+        await Supabase.instance.client.from('user_profiles').insert({
+          'id': user.id,
+          ...updates,
+        });
+        debugPrint('✅ 已创建 user_profiles 行');
+      } else {
+        // 如果行存在，更新数据
+        debugPrint('ℹ️ user_profiles 中已存在该用户，更新数据...');
+        await Supabase.instance.client
+            .from('user_profiles')
+            .update(updates)
+            .eq('id', user.id);
+      }
+
+      debugPrint('💾 已保存到 user_profiles:');
+      debugPrint('   user_id: ${user.id}');
+      debugPrint('   updates: $updates');
 
       if (mounted) {
         ScaffoldMessenger.of(
@@ -273,11 +317,18 @@ class _EditProfilePageState extends State<EditProfilePage> {
       }
     } catch (e) {
       // Log full error for debugging
-      // Provide a user-friendly message for common cases (e.g., function not found)
       debugPrint('EditProfilePage._save error: $e');
       final errStr = e.toString();
       String userMessage = '保存失败: $errStr';
-      if (errStr.contains('Edge Function 调用失败') ||
+
+      // 提供更友好的错误信息
+      if (errStr.contains('认证失败') ||
+          errStr.contains('JWT') ||
+          errStr.contains('401')) {
+        userMessage = '登录已过期，请退出后重新登录';
+      } else if (errStr.contains('会话已过期')) {
+        userMessage = '登录会话已过期，请重新登录';
+      } else if (errStr.contains('Edge Function 调用失败') ||
           errStr.contains('Requested function was not found') ||
           errStr.contains('status: 404') ||
           errStr.contains('FunctionException')) {

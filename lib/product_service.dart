@@ -185,14 +185,13 @@ class ProductService {
       // 为每个商品获取第一张图片
       for (var product in products) {
         try {
-          final media = await mediaService.getMediaByOwner(
-            ownerType: 'product',
-            ownerId: product['id'].toString(),
+          final media = await mediaService.getMediaByEntity(
+            product['id'].toString(),
           );
 
           // 如果有图片，使用第一张图片的URL
           if (media.isNotEmpty) {
-            product['image'] = media.first['url'];
+            product['image'] = media.first.url;
           } else {
             // 如果没有图片，使用默认占位图
             product['image'] = 'https://picsum.photos/seed/placeholder/500/500';
@@ -234,14 +233,13 @@ class ProductService {
       // 为每个商品获取第一张图片
       for (var product in products) {
         try {
-          final media = await mediaService.getMediaByOwner(
-            ownerType: 'product',
-            ownerId: product['id'].toString(),
+          final media = await mediaService.getMediaByEntity(
+            product['id'].toString(),
           );
 
           // 如果有图片，使用第一张图片的URL
           if (media.isNotEmpty) {
-            product['image'] = media.first['url'];
+            product['image'] = media.first.url;
           } else {
             // 如果没有图片，使用默认占位图
             product['image'] = 'https://picsum.photos/seed/placeholder/500/500';

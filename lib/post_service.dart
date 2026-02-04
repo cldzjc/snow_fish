@@ -74,4 +74,33 @@ class PostService {
       throw Exception('other: $e');
     }
   }
+
+  // 更新帖子的媒体URL列表
+  Future<void> updatePostMediaUrls(
+    String postId,
+    List<String> mediaUrls,
+  ) async {
+    try {
+      await _client
+          .from('posts')
+          .update({
+            'media_urls': mediaUrls,
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          })
+          .eq('id', postId);
+    } catch (e) {
+      final msg = e.toString();
+      if (msg.contains('Failed host lookup') ||
+          msg.contains('SocketException')) {
+        throw Exception('network: $e');
+      }
+      if (msg.contains('permission') ||
+          msg.contains('403') ||
+          msg.contains('forbidden') ||
+          msg.contains('Unauthorized')) {
+        throw Exception('permission: $e');
+      }
+      throw Exception('other: $e');
+    }
+  }
 }

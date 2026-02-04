@@ -3,7 +3,7 @@
 
 import 'dart:io';
 import 'dart:convert';
-import 'dart:typed_data';
+import 'dart:async';
 
 import 'package:supabase/supabase.dart';
 import 'package:http/http.dart' as http;
@@ -48,11 +48,6 @@ Future<int> main(List<String> args) async {
       .eq('owner_type', 'user_video')
       .order('created_at', ascending: true)
       .limit(limit == 0 ? 10000 : limit);
-
-  if (res == null) {
-    stderr.writeln('Failed to query media table');
-    return 3;
-  }
 
   final rows = (res as List).cast<Map<String, dynamic>>();
   final candidates = rows.where((r) {
@@ -137,7 +132,7 @@ Future<int> main(List<String> args) async {
 
       if (!await thumbFile.exists()) {
         stdout.writeln('  no thumbnail produced for id=$id, skipping');
-        await videoFile.delete().catchError((_) {});
+        unawaited(videoFile.delete());
         continue;
       }
 
@@ -147,8 +142,8 @@ Future<int> main(List<String> args) async {
         stdout.writeln(
           '  dry-run: would upload thumbnail (${thumbBytes.length} bytes) and update DB',
         );
-        await videoFile.delete().catchError((_) {});
-        await thumbFile.delete().catchError((_) {});
+        unawaited(videoFile.delete());
+        unawaited(thumbFile.delete());
         continue;
       }
 
@@ -193,7 +188,7 @@ Future<int> main(List<String> args) async {
       );
 
       // Update DB row
-      final up = await client
+      await client
           .from('media')
           .update({'thumbnail_url': publicUrl})
           .eq('id', id)
@@ -201,8 +196,8 @@ Future<int> main(List<String> args) async {
       stdout.writeln('  updated thumbnail_url for id=$id -> $publicUrl');
 
       // cleanup
-      await videoFile.delete().catchError((_) {});
-      await thumbFile.delete().catchError((_) {});
+      unawaited(videoFile.delete());
+      unawaited(thumbFile.delete());
     } catch (e, st) {
       stdout.writeln('  error processing id=$id: $e');
       stdout.writeln(st);

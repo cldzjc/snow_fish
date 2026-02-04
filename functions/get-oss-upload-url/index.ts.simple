@@ -1,0 +1,127 @@
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+
+// 跨域响应头配置
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+/**
+ * HMAC-SHA1 签名函数
+ */
+async function hmacSha1(key: string, data: string) {
+  const enc = new TextEncoder();
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(key),
+    { name: "HMAC", hash: "SHA-1" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    cryptoKey,
+    enc.encode(data)
+  );
+  return btoa(String.fromCharCode(...new Uint8Array(signature)));
+}
+
+serve(async (req: Request) => {
+  // 处理 CORS 预检请求
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  try {
+    console.log('📨 [GET-OSS-UPLOAD-URL] Received request');
+    
+    // 1. 获取认证信息（简化版：直接使用 test-user）
+    const authHeader = req.headers.get('Authorization');
+    console.log(`🔑 Authorization header present: ${!!authHeader}`);
+    
+    // 使用固定的测试用户 ID（跳过 JWT 验证）
+    const userId = 'test-user-' + Date.now();
+    console.log(`✅ Using user ID: ${userId}`);
+
+    // 2. 解析请求参数
+    const body = await req.json();
+    const { 
+      filename, 
+      contentType, 
+      owner_type,
+      entity_type,
+    } = body;
+
+    console.log('📋 Request params:', { filename, contentType, owner_type, entity_type });
+
+    const entityType = owner_type || entity_type;
+
+    // 3. 基础参数校验
+    if (!filename || !contentType || !entityType) {
+      throw new Error("Missing required fields: filename, contentType, owner_type/entity_type");
+    }
+
+    // 4. OSS 配置
+    const accessKeyId = Deno.env.get("OSS_ACCESS_KEY_ID");
+    const accessKeySecret = Deno.env.get("OSS_ACCESS_KEY_SECRET");
+    const bucket = Deno.env.get("OSS_BUCKET");
+    const region = Deno.env.get("OSS_REGION");
+
+    console.log("🔧 Checking OSS config...", {
+      hasAccessKeyId: !!accessKeyId,
+      hasAccessKeySecret: !!accessKeySecret,
+      hasBucket: !!bucket,
+      hasRegion: !!region,
+    });
+
+    if (!accessKeyId || !accessKeySecret || !bucket || !region) {
+      throw new Error("OSS configuration incomplete");
+    }
+
+    // 5. 构建 OSS 存储路径
+    const timestamp = Date.now();
+    const cleanFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const objectKey = `snowfish/${userId}/${entityType}/${timestamp}_${cleanFilename}`;
+
+    console.log(`📁 Object key: ${objectKey}`);
+
+    // 6. 计算 OSS 预签名 URL
+    const expires = Math.floor(Date.now() / 1000) + 120;
+    const canonicalString = `PUT\n\n${contentType}\n${expires}\n/${bucket}/${objectKey}`;
+    const signature = await hmacSha1(accessKeySecret, canonicalString);
+
+    // 7. 生成完整 URL
+    const baseUrl = `https://${bucket}.${region}.aliyuncs.com/${objectKey}`;
+    const uploadUrl = `${baseUrl}?OSSAccessKeyId=${accessKeyId}&Expires=${expires}&Signature=${encodeURIComponent(signature)}`;
+
+    console.log(`✅ Successfully generated upload URL`);
+
+    return new Response(
+      JSON.stringify({
+        uploadUrl,
+        publicUrl: baseUrl,
+        objectKey,
+      }),
+      { 
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200 
+      }
+    );
+
+  } catch (error) {
+    console.error("❌ Error:", error instanceof Error ? error.message : String(error));
+    
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    
+    return new Response(
+      JSON.stringify({ 
+        error: errorMessage,
+        timestamp: new Date().toISOString(),
+      }),
+      { 
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400
+      }
+    );
+  }
+});

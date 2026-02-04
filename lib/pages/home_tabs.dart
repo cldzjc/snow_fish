@@ -16,30 +16,30 @@ class _HomeTabsState extends State<HomeTabs> {
   int _currentIndex = 0;
 
   // 四个页面
-  late final List<Widget> _pages;
+  late List<Widget> _pages;
 
   @override
   void initState() {
     super.initState();
+    _initPages();
+
+    // 监听认证状态变化，确保所有页面都能响应登录状态变化
+    Supabase.instance.client.auth.onAuthStateChange.listen((event) {
+      if (mounted) {
+        setState(() {
+          _initPages(); // 重新创建页面，确保状态更新
+        });
+      }
+    });
+  }
+
+  void _initPages() {
     _pages = [
       const HomePage(),
       const PublishPage(),
       const ChatPage(),
       const ProfilePage(),
     ];
-
-    // 监听认证状态变化，确保所有页面都能响应登录状态变化
-    Supabase.instance.client.auth.onAuthStateChange.listen((event) {
-      if (mounted) {
-        setState(() {}); // 重新创建页面，确保状态更新
-        _pages = [
-          const HomePage(),
-          const PublishPage(),
-          const ChatPage(),
-          const ProfilePage(),
-        ];
-      }
-    });
   }
 
   @override

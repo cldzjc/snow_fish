@@ -10,6 +10,7 @@ import 'register_page.dart';
 import 'my_products_page.dart';
 import 'edit_profile_page.dart';
 import 'my_videos_page.dart';
+import '../models/user_profile.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -20,10 +21,7 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   bool _loading = true;
-  String _username = '';
-  String? _avatarUrl;
-  String? _coverUrl;
-  String _intro = '';
+  UserProfile? _userProfile;
   String? _videoUrl;
 
   VideoPlayerController? _videoController;
@@ -49,46 +47,41 @@ class _ProfilePageState extends State<ProfilePage> {
   Future<void> _fetchUserProfile() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) {
-      setState(() {
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+      }
       return;
     }
 
-    // Use current Supabase client API: maybeSingle() returns row or null
+    // 从 user_profiles 表获取用户数据
     final res = await Supabase.instance.client
         .from('user_profiles')
         .select()
         .eq('id', user.id)
         .maybeSingle();
 
+    if (!mounted) return;
+
     if (res == null) {
       setState(() => _loading = false);
       return;
     }
 
-    final data = res as Map<String, dynamic>;
+    final data = res;
+    final profile = UserProfile.fromJson(data);
 
     setState(() {
-      // Support both schemas: username <-> nickname, intro <-> bio,
-      // cover_url <-> background_url, video_url <-> profile_video_url
-      _username =
-          (data['username'] as String?) ?? (data['nickname'] as String?) ?? '';
-      _avatarUrl =
-          (data['avatar_url'] as String?) ?? (data['avatar'] as String?);
-      _coverUrl =
-          (data['cover_url'] as String?) ?? (data['background_url'] as String?);
-      _intro = (data['intro'] as String?) ?? (data['bio'] as String?) ?? '';
-      _videoUrl =
-          (data['video_url'] as String?) ??
-          (data['profile_video_url'] as String?);
+      _userProfile = profile;
       _loading = false;
     });
 
+    // 如果有视频，初始化视频播放器（当前架构中暂未使用）
     if (_videoUrl != null && _videoUrl!.isNotEmpty) {
       _videoController = VideoPlayerController.network(_videoUrl!);
       _initVideoFuture = _videoController!.initialize();
-      setState(() {});
+      if (mounted) setState(() {});
     }
   }
 
@@ -143,44 +136,76 @@ class _ProfilePageState extends State<ProfilePage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // Cover
+                      // 背景图 - 使用 CachedNetworkImage 加载
                       SizedBox(
                         height: 180,
-                        child: _coverUrl != null && _coverUrl!.isNotEmpty
-                            ? CachedNetworkImage(
-                                imageUrl: _coverUrl!,
+                        child: Stack(
+                          children: [
+                            // 背景图片
+                            if (_userProfile?.backgroundUrl != null &&
+                                _userProfile!.backgroundUrl!.isNotEmpty)
+                              CachedNetworkImage(
+                                imageUrl: _userProfile!.backgroundUrl!,
                                 fit: BoxFit.cover,
                                 placeholder: (context, url) => const Center(
                                   child: CircularProgressIndicator(),
                                 ),
                                 errorWidget: (context, url, error) {
                                   debugPrint(
-                                    'Cover image load error: $error (url=$_coverUrl)',
+                                    'Background image load error: $error (url=${_userProfile?.backgroundUrl})',
                                   );
                                   return Container(
                                     color: Colors.grey[200],
                                     child: const Center(
                                       child: Text(
-                                        '封面加载失败',
+                                        '背景图加载失败',
                                         style: TextStyle(color: Colors.black54),
                                       ),
                                     ),
                                   );
                                 },
                               )
-                            : Container(color: Colors.grey[200]),
+                            else
+                              Container(color: Colors.grey[200]),
+                            // 编辑背景的按钮
+                            Positioned(
+                              top: 8,
+                              right: 8,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.black45,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: IconButton(
+                                  icon: const Icon(
+                                    Icons.edit,
+                                    color: Colors.white,
+                                  ),
+                                  onPressed: _openEdit,
+                                  tooltip: '编辑背景',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       Padding(
                         padding: const EdgeInsets.all(16),
                         child: Row(
                           children: [
+                            // 头像
                             CircleAvatar(
                               radius: 36,
                               backgroundImage:
-                                  _avatarUrl != null && _avatarUrl!.isNotEmpty
-                                  ? CachedNetworkImageProvider(_avatarUrl!)
+                                  _userProfile?.avatarUrl != null &&
+                                      _userProfile!.avatarUrl!.isNotEmpty
+                                  ? CachedNetworkImageProvider(
+                                      _userProfile!.avatarUrl!,
+                                    )
                                   : null,
-                              child: (_avatarUrl == null || _avatarUrl!.isEmpty)
+                              child:
+                                  (_userProfile?.avatarUrl == null ||
+                                      _userProfile!.avatarUrl!.isEmpty)
                                   ? const Icon(Icons.person, size: 36)
                                   : null,
                             ),
@@ -190,14 +215,19 @@ class _ProfilePageState extends State<ProfilePage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    _username,
+                                    _userProfile?.nickname ?? '未设置昵称',
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 18,
                                     ),
                                   ),
                                   const SizedBox(height: 6),
-                                  Text(_intro),
+                                  Text(
+                                    _userProfile?.bio ?? '还没有个人简介',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(color: Colors.grey[600]),
+                                  ),
                                 ],
                               ),
                             ),
@@ -252,6 +282,18 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
 
                 const SizedBox(height: 24),
+                // 编辑资料按钮（主按钮）
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.edit),
+                    label: const Text('编辑资料'),
+                    onPressed: _openEdit,
+                  ),
+                ),
+                const SizedBox(height: 16),
+
                 const Text(
                   '我的功能',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),

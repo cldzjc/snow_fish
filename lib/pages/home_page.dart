@@ -6,67 +6,57 @@ import 'posts_list_widget.dart';
 import 'publish_post_page.dart';
 import 'publish_page.dart';
 import '../config.dart';
-import '../product_service.dart';
+import '../services/entity_service.dart';
+import '../models/base_entity.dart';
+import '../models/media_model.dart';
 
-// 1. 商品数据模型 (支持完整 Supabase 数据)
+// 1. 商品数据模型 (来自 BaseEntity)
 class Product {
   final String id;
   final String title;
   final double price;
-  final String image;
   final String location;
-  final String sellerAvatar;
-  final String sellerName;
-
-  // 新增字段
-  final String? category;
-  final String? condition;
-  final String? description;
-  final String? brand;
-  final String? size;
-  final String? usageTime;
-  final String? transactionMethods;
-  final bool? negotiable;
+  final String? image;
+  final String? sellerAvatar;
+  final String? sellerName;
+  final String description;
+  final String entityType;
+  final List<MediaModel> media;
 
   const Product({
     required this.id,
     required this.title,
     required this.price,
-    required this.image,
     required this.location,
-    required this.sellerAvatar,
-    required this.sellerName,
-    this.category,
-    this.condition,
-    this.description,
-    this.brand,
-    this.size,
-    this.usageTime,
-    this.transactionMethods,
-    this.negotiable,
+    this.image,
+    this.sellerAvatar,
+    this.sellerName,
+    required this.description,
+    required this.entityType,
+    required this.media,
   });
 
-  // 从 Map (Supabase 数据) 映射到 Product 对象
-  factory Product.fromMap(Map<String, dynamic> data) {
+  /// 从 BaseEntity 创建 Product
+  factory Product.fromEntity(BaseEntity entity) {
+    final price = (entity.extraData['price'] as num?)?.toDouble() ?? 0.0;
+    final location = entity.extraData['location'] as String? ?? '未知地点';
+    final sellerName = entity.extraData['sellerName'] as String? ?? '未知卖家';
+    final sellerAvatar = entity.extraData['sellerAvatar'] as String?;
+    final imageUrl = entity.media.isNotEmpty
+        ? entity.media.first.url
+        : 'https://picsum.photos/seed/placeholder/500/500';
+
     return Product(
-      id: data['id']?.toString() ?? 'unknown',
-      title: data['title'] ?? '未知商品',
-      price: (data['price'] as num?)?.toDouble() ?? 0.0,
-      image: data['image'] ?? 'https://picsum.photos/seed/placeholder/500/500',
-      location: data['location'] ?? '未知地点',
-      sellerAvatar:
-          data['selleravatar'] ??
-          'https://api.dicebear.com/7.x/avataaars/svg?seed=Default',
-      sellerName: data['sellername'] ?? '匿名用户',
-      // 新增字段映射
-      category: data['category'],
-      condition: data['condition'],
-      description: data['description'],
-      brand: data['brand'],
-      size: data['size'],
-      usageTime: data['usage_time'], // 匹配数据库字段名
-      transactionMethods: data['transaction_methods'], // 匹配数据库字段名
-      negotiable: data['negotiable'] as bool?,
+      id: entity.id,
+      title: entity.title,
+      price: price,
+      location: location,
+      image: imageUrl,
+      description: entity.content ?? '',
+      entityType: entity.entityType,
+      media: entity.media,
+      sellerName: sellerName,
+      sellerAvatar: sellerAvatar,
     );
   }
 }
@@ -178,47 +168,23 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildProductList() {
-    // 本地演示模式：直接使用内存中示例数据
+    // 本地演示模式（可选）
     if (USE_LOCAL_DATA) {
-      final products = localProducts
-          .map((data) => Product.fromMap(data))
-          .toList();
-
-      return MasonryGridView.count(
-        padding: const EdgeInsets.all(12),
-        crossAxisCount: 2,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        itemCount: products.length,
-        itemBuilder: (context, index) =>
-            _buildProductCard(context, products[index]),
-      );
+      // 使用本地数据（如果需要）
+      return const Center(child: Text('本地演示模式未实现'));
     }
 
-    // Supabase 模式：使用带图片的 Realtime 流，带降级机制
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: ProductService().getProductsWithImagesStream(),
+    // 使用 EntityService 加载商品数据
+    return FutureBuilder<List<BaseEntity>>(
+      future: EntityService().fetchEntities(type: 'product', limit: 50),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           final msg = snapshot.error?.toString() ?? '';
-          print('Supabase Stream Error: $msg'); // 添加调试信息
-
-          // 如果是Realtime超时错误，降级到普通查询
-          if (msg.contains('realtime_timeout') ||
-              msg.contains('RealtimeSubscribeException') ||
-              msg.contains('timedOut')) {
-            return _buildFallbackProductList();
-          }
-
           String display = '加载失败，请检查网络连接';
-          if (msg.contains('network:') ||
-              msg.contains('Failed host lookup') ||
-              msg.contains('SocketException')) {
-            display = '网络连接失败，请检查模拟器或主机网络设置';
-          } else if (msg.contains('permission:') ||
-              msg.contains('403') ||
-              msg.contains('forbidden')) {
-            display = '权限错误：无法加载商品，请检查 Supabase RLS 策略';
+          if (msg.contains('network:')) {
+            display = '网络连接失败，请检查网络设置';
+          } else if (msg.contains('permission:')) {
+            display = '权限错误：无法加载商品';
           }
 
           return Center(
@@ -227,78 +193,9 @@ class _HomePageState extends State<HomePage>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  const Icon(Icons.error_outline, size: 48, color: Colors.grey),
+                  const SizedBox(height: 12),
                   Text(display, style: const TextStyle(color: Colors.grey)),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: () => setState(() {}),
-                    child: const Text('重试'),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        final products = snapshot.data!
-            .map((data) => Product.fromMap(data))
-            .toList();
-
-        if (products.isEmpty) {
-          return const Center(child: Text('暂无商品发布'));
-        }
-
-        return MasonryGridView.count(
-          padding: const EdgeInsets.all(12),
-          crossAxisCount: 2,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          itemCount: products.length,
-          itemBuilder: (context, index) =>
-              _buildProductCard(context, products[index]),
-        );
-      },
-    );
-  }
-
-  // 降级方案：当Realtime连接失败时使用普通查询
-  Widget _buildFallbackProductList() {
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: ProductService().getProductsWithImages(),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          final msg = snapshot.error?.toString() ?? '';
-          String display = '加载失败，请检查网络连接';
-          if (msg.contains('network:') ||
-              msg.contains('Failed host lookup') ||
-              msg.contains('SocketException')) {
-            display = '网络连接失败，请检查模拟器或主机网络设置';
-          } else if (msg.contains('permission:') ||
-              msg.contains('403') ||
-              msg.contains('forbidden')) {
-            display = '权限错误：无法加载商品，请检查 Supabase RLS 策略';
-          }
-
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.wifi_off, size: 48, color: Colors.grey),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Realtime连接超时',
-                    style: const TextStyle(color: Colors.grey, fontSize: 16),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    display,
-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
-                  ),
                   const SizedBox(height: 12),
                   ElevatedButton(
                     onPressed: () => setState(() {}),
@@ -323,13 +220,12 @@ class _HomePageState extends State<HomePage>
           );
         }
 
-        final products = snapshot.data!
-            .map((data) => Product.fromMap(data))
-            .toList();
-
-        if (products.isEmpty) {
+        final entities = snapshot.data ?? [];
+        if (entities.isEmpty) {
           return const Center(child: Text('暂无商品发布'));
         }
+
+        final products = entities.map((e) => Product.fromEntity(e)).toList();
 
         return MasonryGridView.count(
           padding: const EdgeInsets.all(12),
@@ -344,7 +240,7 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  // 3. 商品卡片组件 (与之前逻辑相同，但现在使用 Product 对象)
+  // 3. 商品卡片组件
   Widget _buildProductCard(BuildContext context, Product product) {
     return GestureDetector(
       onTap: () {
@@ -370,7 +266,7 @@ class _HomePageState extends State<HomePage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 图片区域：为避免在 MasonryGrid 中尺寸不确定，增加高度约束
+            // 图片区域
             ClipRRect(
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(10),
@@ -379,7 +275,9 @@ class _HomePageState extends State<HomePage>
                 height: 160,
                 width: double.infinity,
                 child: CachedNetworkImage(
-                  imageUrl: product.image,
+                  imageUrl:
+                      product.image ??
+                      'https://picsum.photos/seed/placeholder/500/500',
                   fit: BoxFit.cover,
                   placeholder: (context, url) => Container(
                     color: Colors.grey[200],
@@ -387,7 +285,10 @@ class _HomePageState extends State<HomePage>
                       child: Icon(Icons.image, color: Colors.grey),
                     ),
                   ),
-                  errorWidget: (context, url, error) => const Icon(Icons.error),
+                  errorWidget: (context, url, error) => Container(
+                    color: Colors.grey[200],
+                    child: const Icon(Icons.error),
+                  ),
                 ),
               ),
             ),
@@ -409,11 +310,12 @@ class _HomePageState extends State<HomePage>
                   ),
                   const SizedBox(height: 8),
 
+                  // 价格和位置
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        '¥${product.price.toStringAsFixed(0)}', // 格式化价格
+                        '¥${product.price.toStringAsFixed(0)}',
                         style: const TextStyle(
                           color: Colors.red,
                           fontWeight: FontWeight.bold,
@@ -434,25 +336,6 @@ class _HomePageState extends State<HomePage>
                             ),
                           ),
                         ],
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 8,
-                        backgroundImage: NetworkImage(product.sellerAvatar),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        product.sellerName,
-                        style: const TextStyle(
-                          color: Color.fromARGB(255, 174, 74, 74),
-                          fontSize: 10,
-                        ),
                       ),
                     ],
                   ),

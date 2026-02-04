@@ -1,15 +1,11 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:dio/dio.dart';
-import 'package:image/image.dart' as img;
-import 'package:mime/mime.dart';
-import 'package:flutter/foundation.dart';
+
 import '../config.dart';
-import '../product_service.dart';
+import '../services/entity_service.dart';
 import '../media_service.dart';
 import 'login_page.dart';
 
@@ -25,6 +21,7 @@ class _PublishPageState extends State<PublishPage> {
   final _contentController = TextEditingController(); // 正文内容
   final _priceController = TextEditingController(); // 价格
   List<PlatformFile> _pickedImages = []; // 选中的图片文件
+  PlatformFile? _pickedVideo; // 选中的视频文件
   bool _isLoading = false;
 
   // 检查登录状态
@@ -82,41 +79,95 @@ class _PublishPageState extends State<PublishPage> {
         if (mounted) Navigator.pop(context, true);
         return;
       } else {
-        // Supabase 模式：使用 ProductService
+        // Supabase 模式：使用 EntityService
         print('开始发布商品到 Supabase...');
         final currentUser = Supabase.instance.client.auth.currentUser;
+        if (currentUser == null) {
+          _showSnackbar('未登录，无法发布', Colors.red);
+          return;
+        }
+
+        // 获取用户资料（用于获取真实昵称和头像）
+        print('📋 查询用户资料: ${currentUser.id}');
+        final userProfile = await Supabase.instance.client
+            .from('user_profiles')
+            .select()
+            .eq('id', currentUser.id)
+            .maybeSingle();
+
+        print('📋 用户资料查询结果: $userProfile');
+
         final sellerName =
-            (currentUser?.userMetadata?['name'] as String?) ??
-            (currentUser?.userMetadata?['nickname'] as String?) ??
-            currentUser?.email ??
+            (userProfile?['nickname'] as String?) ??
+            (currentUser.userMetadata?['name'] as String?) ??
+            currentUser.email ??
             '用户';
-        final sellerAvatar = currentUser != null
-            ? 'https://api.dicebear.com/7.x/avataaars/png?seed=${currentUser.id}'
-            : 'https://api.dicebear.com/7.x/avataaars/png?seed=NewUser';
+
+        final sellerAvatar =
+            (userProfile?['avatar_url'] as String?) ??
+            'https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.id}';
+
+        print('✅ 卖家信息: name=$sellerName, avatar=$sellerAvatar');
 
         try {
-          // 1. 创建商品记录（不包含图片URL）
-          final result = await ProductService().createProduct(
-            title: _titleController.text, // 使用标题字段
-            price: double.tryParse(_priceController.text) ?? 0.0,
-            location: '未知地点', // 简化版本，固定值
-            sellerName: sellerName,
-            sellerAvatar: sellerAvatar,
-            image: '', // 不再直接存储图片URL到products表
-            description: _contentController.text, // 正文作为描述
+          // 1. 创建商品实体（使用 EntityService）
+          final entity = await EntityService().createEntity(
+            entityType: 'product',
+            title: _titleController.text,
+            content: _contentController.text,
+            extraData: {
+              'price': double.tryParse(_priceController.text) ?? 0.0,
+              'location': '未知地点',
+              'sellerName': sellerName,
+              'sellerAvatar': sellerAvatar,
+            },
           );
-          print('发布成功，返回的商品数据: $result');
+          print('发布成功，返回的实体数据: $entity');
 
-          final productId = result['id'] as String;
-          print('商品ID: $productId');
+          // 2. 上传媒体文件
+          final mediaService = MediaService();
 
-          // 2. 上传图片并保存到media表
-          await MediaService().uploadImagesForOwner(
-            userId: currentUser!.id,
-            ownerType: 'product',
-            ownerId: productId,
-            files: _pickedImages,
-          );
+          // 上传图片
+          if (_pickedImages.isNotEmpty) {
+            print('🖼️ 开始上传 ${_pickedImages.length} 张图片');
+            for (final imageFile in _pickedImages) {
+              try {
+                print('   上传图片: ${imageFile.name}');
+                await mediaService.uploadMediaFile(
+                  file: imageFile,
+                  userId: currentUser.id,
+                  entityId: entity.id,
+                );
+                print('   ✅ 图片上传成功');
+              } catch (e) {
+                print('   ❌ 上传图片失败: $e');
+              }
+            }
+          }
+
+          // 3. 如果有视频，上传视频
+          if (_pickedVideo != null) {
+            print('🎬 开始上传视频: ${_pickedVideo!.name}');
+            try {
+              await mediaService.uploadMediaFile(
+                file: _pickedVideo!,
+                userId: currentUser.id,
+                entityId: entity.id,
+              );
+              print('   ✅ 视频上传成功');
+            } catch (e) {
+              print('   ❌ 上传视频失败: $e');
+              // 检查是否是不支持的视频格式
+              if (e is UnsupportedVideoException) {
+                if (mounted) {
+                  _showSnackbar(e.message, Colors.orange);
+                }
+                return; // 停止发布流程
+              }
+              // 其他错误继续抛出
+              rethrow;
+            }
+          }
 
           // 发布成功后返回并通知刷新
           if (mounted) Navigator.pop(context, true);
@@ -140,6 +191,7 @@ class _PublishPageState extends State<PublishPage> {
       _priceController.clear();
       setState(() {
         _pickedImages = [];
+        _pickedVideo = null;
       });
 
       _showSnackbar('商品发布成功！首页已实时更新', Colors.green);
@@ -173,6 +225,19 @@ class _PublishPageState extends State<PublishPage> {
     if (result != null && result.files.isNotEmpty) {
       setState(() {
         _pickedImages = result.files;
+      });
+    }
+  }
+
+  // 选择视频
+  Future<void> _pickVideo() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.video,
+      allowMultiple: false,
+    );
+    if (result != null && result.files.isNotEmpty) {
+      setState(() {
+        _pickedVideo = result.files.first;
       });
     }
   }
@@ -273,6 +338,98 @@ class _PublishPageState extends State<PublishPage> {
                             SizedBox(height: 8),
                             Text(
                               '点击选择图片（支持多图）',
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+            ),
+            const SizedBox(height: 16),
+
+            // 1.5 视频选择
+            const Text(
+              '选择视频 (可选)',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              height: 80,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey[300]!),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: _pickedVideo != null
+                  ? Row(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: Container(
+                            width: 64,
+                            height: 64,
+                            decoration: BoxDecoration(
+                              color: Colors.black,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Icon(
+                              Icons.videocam,
+                              color: Colors.white,
+                              size: 32,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _pickedVideo!.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 14,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                '${(_pickedVideo!.size / 1024 / 1024).toStringAsFixed(1)} MB',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () {
+                            setState(() {
+                              _pickedVideo = null;
+                            });
+                          },
+                          icon: const Icon(
+                            Icons.close,
+                            color: Colors.red,
+                            size: 18,
+                          ),
+                        ),
+                      ],
+                    )
+                  : InkWell(
+                      onTap: _pickVideo,
+                      child: const Center(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.video_camera_back,
+                              size: 24,
+                              color: Colors.grey,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              '点击选择视频',
                               style: TextStyle(color: Colors.grey),
                             ),
                           ],
