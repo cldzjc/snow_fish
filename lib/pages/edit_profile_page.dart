@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -10,6 +9,7 @@ import 'package:mime/mime.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter/foundation.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../utils/custom_cropper.dart';
 
 // Top-level function for compute to compress images in a background isolate
 Uint8List _compressImageIsolate(Map<String, dynamic> args) {
@@ -31,7 +31,7 @@ Uint8List _compressImageIsolate(Map<String, dynamic> args) {
 /// - For each picked file: call Supabase Edge Function `get-oss-upload-url` to get `uploadUrl` + `publicUrl`, then HTTP PUT file bytes to `uploadUrl`
 /// - On success, updates `user_profiles` with returned `publicUrl`s
 class EditProfilePage extends StatefulWidget {
-  const EditProfilePage({Key? key}) : super(key: key);
+  const EditProfilePage({super.key});
 
   @override
   State<EditProfilePage> createState() => _EditProfilePageState();
@@ -48,6 +48,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   PlatformFile? _pickedCover;
 
   bool _isSaving = false;
+  bool _isCroppingCover = false;
 
   @override
   void initState() {
@@ -95,9 +96,35 @@ class _EditProfilePageState extends State<EditProfilePage> {
   }
 
   Future<void> _pickCover() async {
-    final result = await FilePicker.platform.pickFiles(type: FileType.image);
-    if (result != null && result.files.isNotEmpty) {
-      setState(() => _pickedCover = result.files.first);
+    if (_isCroppingCover) return;
+    _isCroppingCover = true;
+    try {
+      final result = await FilePicker.platform.pickFiles(type: FileType.image);
+      if (result != null && result.files.isNotEmpty) {
+        final pickedFile = result.files.first;
+
+        // 裁剪背景图为 16:9 比例
+        final croppedFile = await cropImageWithUi(
+          context,
+          pickedFile.path!,
+          aspectRatio: 16 / 9,
+          title: '裁剪背景图',
+        );
+
+        if (croppedFile != null) {
+          // 将裁剪后的文件转换为 PlatformFile
+          final croppedBytes = await croppedFile.readAsBytes();
+          final croppedPlatformFile = PlatformFile(
+            name: pickedFile.name,
+            size: croppedBytes.length,
+            bytes: croppedBytes,
+            path: croppedFile.path,
+          );
+          setState(() => _pickedCover = croppedPlatformFile);
+        }
+      }
+    } finally {
+      _isCroppingCover = false;
     }
   }
 
@@ -105,6 +132,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   Future<Map<String, dynamic>> _getUploadInfo(
     String filename,
     String contentType,
+    String ownerType,
   ) async {
     final user = Supabase.instance.client.auth.currentUser;
 
@@ -121,7 +149,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     final body = {
       'filename': filename,
       'contentType': contentType,
-      'owner_type': 'avatar',
+      'owner_type': ownerType,
       'owner_id': user.id,
     };
 
@@ -164,7 +192,13 @@ class _EditProfilePageState extends State<EditProfilePage> {
     String contentType,
     String label,
   ) async {
-    final dio = Dio();
+    final dio = Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 15),
+        sendTimeout: const Duration(seconds: 60),
+        receiveTimeout: const Duration(seconds: 30),
+      ),
+    );
     final headers = {
       'content-type': contentType,
       'content-length': bytes.length.toString(),
@@ -179,12 +213,16 @@ class _EditProfilePageState extends State<EditProfilePage> {
         ),
       );
 
-      // Upload as a stream with content-length so servers/clients can handle it efficiently
-      final stream = Stream.fromIterable([bytes]);
       await dio.put(
         uploadUrl,
-        data: stream,
+        data: bytes,
         options: Options(headers: headers),
+        onSendProgress: (sent, total) {
+          if (total > 0) {
+            final percent = (sent / total * 100).toStringAsFixed(0);
+            debugPrint('$label 上传进度: $percent%');
+          }
+        },
       );
 
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -231,9 +269,16 @@ class _EditProfilePageState extends State<EditProfilePage> {
         final info = await _getUploadInfo(
           p.basename(_pickedAvatar!.name),
           mimeType,
+          'avatar',
         );
         final uploadUrl = info['uploadUrl'] ?? info['upload_url'];
         final publicUrl = info['publicUrl'] ?? info['public_url'];
+        if (uploadUrl == null || uploadUrl is! String || uploadUrl.isEmpty) {
+          throw Exception('获取上传地址失败（avatar uploadUrl 为空）');
+        }
+        if (publicUrl == null || publicUrl is! String || publicUrl.isEmpty) {
+          throw Exception('获取公开地址失败（avatar publicUrl 为空）');
+        }
 
         debugPrint('🖼️ Avatar upload info:');
         debugPrint('   uploadUrl: $uploadUrl');
@@ -263,9 +308,16 @@ class _EditProfilePageState extends State<EditProfilePage> {
         final info = await _getUploadInfo(
           p.basename(_pickedCover!.name),
           mimeType,
+          'cover',
         );
         final uploadUrl = info['uploadUrl'] ?? info['upload_url'];
         final publicUrl = info['publicUrl'] ?? info['public_url'];
+        if (uploadUrl == null || uploadUrl is! String || uploadUrl.isEmpty) {
+          throw Exception('获取上传地址失败（cover uploadUrl 为空）');
+        }
+        if (publicUrl == null || publicUrl is! String || publicUrl.isEmpty) {
+          throw Exception('获取公开地址失败（cover publicUrl 为空）');
+        }
         Uint8List bytes;
         if (_isImageFile(_pickedCover!) && _pickedCover!.path != null) {
           // compress cover to larger width (e.g., 1080px) in background isolate

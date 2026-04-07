@@ -13,7 +13,7 @@ import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:snow_fish/pages/video_player_page.dart';
 
 class MyVideosPage extends StatefulWidget {
-  const MyVideosPage({Key? key}) : super(key: key);
+  const MyVideosPage({super.key});
 
   @override
   State<MyVideosPage> createState() => _MyVideosPageState();

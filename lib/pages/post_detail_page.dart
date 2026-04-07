@@ -51,7 +51,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
         }
       }
     } catch (e) {
-      print('❌ 加载帖子失败: $e');
+      debugPrint('❌ 加载帖子失败: $e');
       if (mounted) {
         setState(() => _isLoadingPost = false);
       }
@@ -70,7 +70,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
         });
       }
     } catch (e) {
-      print('❌ 加载评论失败: $e');
+      debugPrint('❌ 加载评论失败: $e');
       if (mounted) {
         setState(() => _isLoadingComments = false);
       }
@@ -91,7 +91,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
   }
 
   void _showCommentInputSheet({CommentModel? replyTo}) {
-    setState(() => _replyingTo = replyTo);
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -109,7 +108,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
             // 发布的是回复，刷新评论树
             _loadComments();
           }
-          setState(() => _replyingTo = null);
         },
       ),
     );
@@ -145,14 +143,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
                   child: PostActionBar(
                     postId: widget.postId,
                     userId: Supabase.instance.client.auth.currentUser?.id ?? '',
-                    onCommentPressed: () {
-                      _showCommentInputSheet();
-                    },
-                    onSharePressed: () {
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(SnackBar(content: Text('分享功能开发中...')));
-                    },
                   ),
                 ),
 

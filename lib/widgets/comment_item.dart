@@ -48,7 +48,7 @@ class _CommentItemState extends State<CommentItem> {
         setState(() => _isLiked = liked);
       }
     } catch (e) {
-      print('❌ 加载点赞状态失败: $e');
+      debugPrint('❌ 加载点赞状态失败: $e');
     }
   }
 
@@ -76,7 +76,7 @@ class _CommentItemState extends State<CommentItem> {
 
       widget.onLikeChanged?.call();
     } catch (e) {
-      print('❌ 点赞操作失败: $e');
+      debugPrint('❌ 点赞操作失败: $e');
       // 恢复状态
       setState(() {
         _isLiked = !_isLiked;

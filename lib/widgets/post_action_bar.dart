@@ -48,7 +48,7 @@ class _PostActionBarState extends State<PostActionBar> {
         });
       }
     } catch (e) {
-      print('❌ 加载统计数据失败: $e');
+      debugPrint('❌ 加载统计数据失败: $e');
       if (mounted) {
         setState(() => _isLoading = false);
       }

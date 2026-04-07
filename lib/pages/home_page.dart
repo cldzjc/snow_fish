@@ -8,58 +8,6 @@ import 'publish_page.dart';
 import '../config.dart';
 import '../services/entity_service.dart';
 import '../models/base_entity.dart';
-import '../models/media_model.dart';
-
-// 1. 商品数据模型 (来自 BaseEntity)
-class Product {
-  final String id;
-  final String title;
-  final double price;
-  final String location;
-  final String? image;
-  final String? sellerAvatar;
-  final String? sellerName;
-  final String description;
-  final String entityType;
-  final List<MediaModel> media;
-
-  const Product({
-    required this.id,
-    required this.title,
-    required this.price,
-    required this.location,
-    this.image,
-    this.sellerAvatar,
-    this.sellerName,
-    required this.description,
-    required this.entityType,
-    required this.media,
-  });
-
-  /// 从 BaseEntity 创建 Product
-  factory Product.fromEntity(BaseEntity entity) {
-    final price = (entity.extraData['price'] as num?)?.toDouble() ?? 0.0;
-    final location = entity.extraData['location'] as String? ?? '未知地点';
-    final sellerName = entity.extraData['sellerName'] as String? ?? '未知卖家';
-    final sellerAvatar = entity.extraData['sellerAvatar'] as String?;
-    final imageUrl = entity.media.isNotEmpty
-        ? entity.media.first.url
-        : 'https://picsum.photos/seed/placeholder/500/500';
-
-    return Product(
-      id: entity.id,
-      title: entity.title,
-      price: price,
-      location: location,
-      image: imageUrl,
-      description: entity.content ?? '',
-      entityType: entity.entityType,
-      media: entity.media,
-      sellerName: sellerName,
-      sellerAvatar: sellerAvatar,
-    );
-  }
-}
 
 // 2. 首页组件（两分区：广场 + 雪具交易）
 class HomePage extends StatefulWidget {
@@ -119,7 +67,7 @@ class _HomePageState extends State<HomePage>
       body: TabBarView(
         controller: _tabController,
         children: [
-          PostsListWidget(), // 广场：帖子列表
+          const PostsListWidget(), // 广场：帖子列表
           _buildProductList(), // 雪具交易：商品列表（原有逻辑）
         ],
       ),
@@ -132,7 +80,7 @@ class _HomePageState extends State<HomePage>
               if (isPostsTab) {
                 final res = await Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => PublishPostPage()),
+                  MaterialPageRoute(builder: (_) => const PublishPostPage()),
                 );
                 if (res == true) {
                   setState(() {});
@@ -146,7 +94,7 @@ class _HomePageState extends State<HomePage>
               } else {
                 final res = await Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => PublishPage()),
+                  MaterialPageRoute(builder: (_) => const PublishPage()),
                 );
                 if (res == true) {
                   setState(() {});
@@ -225,7 +173,7 @@ class _HomePageState extends State<HomePage>
           return const Center(child: Text('暂无商品发布'));
         }
 
-        final products = entities.map((e) => Product.fromEntity(e)).toList();
+        final products = entities;
 
         return MasonryGridView.count(
           padding: const EdgeInsets.all(12),
@@ -241,7 +189,7 @@ class _HomePageState extends State<HomePage>
   }
 
   // 3. 商品卡片组件
-  Widget _buildProductCard(BuildContext context, Product product) {
+  Widget _buildProductCard(BuildContext context, BaseEntity product) {
     return GestureDetector(
       onTap: () {
         Navigator.push(
@@ -276,7 +224,9 @@ class _HomePageState extends State<HomePage>
                 width: double.infinity,
                 child: CachedNetworkImage(
                   imageUrl:
-                      product.image ??
+                      (product.media.isNotEmpty
+                          ? product.media.first.url
+                          : null) ??
                       'https://picsum.photos/seed/placeholder/500/500',
                   fit: BoxFit.cover,
                   placeholder: (context, url) => Container(
@@ -315,7 +265,7 @@ class _HomePageState extends State<HomePage>
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        '¥${product.price.toStringAsFixed(0)}',
+                        '¥${(product.price ?? 0).toString()}',
                         style: const TextStyle(
                           color: Colors.red,
                           fontWeight: FontWeight.bold,
@@ -329,7 +279,7 @@ class _HomePageState extends State<HomePage>
                             style: TextStyle(color: Colors.grey, fontSize: 10),
                           ),
                           Text(
-                            product.location,
+                            product.location ?? '未知',
                             style: const TextStyle(
                               color: Colors.grey,
                               fontSize: 10,

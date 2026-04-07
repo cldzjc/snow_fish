@@ -9,11 +9,11 @@ class CommentInputSheet extends StatefulWidget {
   final Function(CommentModel) onCommentSubmitted;
 
   const CommentInputSheet({
-    Key? key,
+    super.key,
     required this.entityId,
     this.replyTo,
     required this.onCommentSubmitted,
-  }) : super(key: key);
+  });
 
   @override
   State<CommentInputSheet> createState() => _CommentInputSheetState();
@@ -41,7 +41,7 @@ class _CommentInputSheetState extends State<CommentInputSheet> {
     if (content.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('评论内容不能为空')));
+      ).showSnackBar(const SnackBar(content: Text('评论内容不能为空')));
       return;
     }
 
@@ -59,12 +59,15 @@ class _CommentInputSheetState extends State<CommentInputSheet> {
         Navigator.pop(context);
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('评论已发布')));
+        ).showSnackBar(const SnackBar(content: Text('评论已发布')));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('发布失败: $e'), duration: Duration(seconds: 2)),
+          SnackBar(
+            content: Text('发布失败: $e'),
+            duration: const Duration(seconds: 2),
+          ),
         );
       }
     } finally {
@@ -86,7 +89,7 @@ class _CommentInputSheetState extends State<CommentInputSheet> {
         top: 12,
         bottom: MediaQuery.of(context).viewInsets.bottom + 12,
       ),
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
       ),
@@ -100,7 +103,7 @@ class _CommentInputSheetState extends State<CommentInputSheet> {
             child: Container(
               width: 40,
               height: 4,
-              margin: EdgeInsets.only(bottom: 12),
+              margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
                 color: Colors.grey[300],
                 borderRadius: BorderRadius.circular(2),
@@ -111,9 +114,9 @@ class _CommentInputSheetState extends State<CommentInputSheet> {
           // 标题
           Text(
             isReply ? '回复 @$replyToName' : '写评论',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
-          SizedBox(height: 12),
+          const SizedBox(height: 12),
 
           // 输入框
           TextField(
@@ -125,10 +128,10 @@ class _CommentInputSheetState extends State<CommentInputSheet> {
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
-              contentPadding: EdgeInsets.all(12),
+              contentPadding: const EdgeInsets.all(12),
             ),
           ),
-          SizedBox(height: 12),
+          const SizedBox(height: 12),
 
           // 发布按钮
           SizedBox(
@@ -138,10 +141,10 @@ class _CommentInputSheetState extends State<CommentInputSheet> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue,
                 disabledBackgroundColor: Colors.grey[300],
-                padding: EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.symmetric(vertical: 12),
               ),
               child: _isSubmitting
-                  ? SizedBox(
+                  ? const SizedBox(
                       height: 20,
                       width: 20,
                       child: CircularProgressIndicator(
@@ -151,7 +154,7 @@ class _CommentInputSheetState extends State<CommentInputSheet> {
                     )
                   : Text(
                       '发布${isReply ? '回复' : '评论'}',
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 16,
                         fontWeight: FontWeight.w600,

@@ -112,7 +112,7 @@ class _ImageGalleryPageState extends State<ImageGalleryPage> {
                     icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
                   ),
                   Expanded(
-                    child: Container(
+                    child: SizedBox(
                       height: 60,
                       child: ListView.builder(
                         scrollDirection: Axis.horizontal,

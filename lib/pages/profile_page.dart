@@ -119,10 +119,7 @@ class _ProfilePageState extends State<ProfilePage> {
       appBar: AppBar(
         title: const Text('我的'),
         actions: _isLoggedIn()
-            ? [
-                IconButton(onPressed: _openEdit, icon: const Icon(Icons.edit)),
-                IconButton(onPressed: _signOut, icon: const Icon(Icons.logout)),
-              ]
+            ? [IconButton(onPressed: _signOut, icon: const Icon(Icons.logout))]
             : null,
       ),
       body: _loading
@@ -167,25 +164,7 @@ class _ProfilePageState extends State<ProfilePage> {
                               )
                             else
                               Container(color: Colors.grey[200]),
-                            // 编辑背景的按钮
-                            Positioned(
-                              top: 8,
-                              right: 8,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.black45,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: IconButton(
-                                  icon: const Icon(
-                                    Icons.edit,
-                                    color: Colors.white,
-                                  ),
-                                  onPressed: _openEdit,
-                                  tooltip: '编辑背景',
-                                ),
-                              ),
-                            ),
+                            // 背景图上不再放置编辑按钮，避免遮挡展示
                           ],
                         ),
                       ),

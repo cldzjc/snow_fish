@@ -4,7 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/entity_service.dart';
-import 'home_page.dart'; // 使用已有的 Product 数据类
+import '../models/base_entity.dart';
 import 'product_detail_page.dart';
 import 'login_page.dart';
 
@@ -16,7 +16,7 @@ class MyProductsPage extends StatefulWidget {
 }
 
 class _MyProductsPageState extends State<MyProductsPage> {
-  late final Future<List<Product>> _futureProducts;
+  late final Future<List<BaseEntity>> _futureProducts;
 
   @override
   void initState() {
@@ -24,7 +24,7 @@ class _MyProductsPageState extends State<MyProductsPage> {
     _futureProducts = _loadProductsForCurrentUser();
   }
 
-  Future<List<Product>> _loadProductsForCurrentUser() async {
+  Future<List<BaseEntity>> _loadProductsForCurrentUser() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) {
       throw Exception('not_logged_in');
@@ -34,7 +34,7 @@ class _MyProductsPageState extends State<MyProductsPage> {
       userId: user.id,
       type: 'product',
     );
-    return entities.map((e) => Product.fromEntity(e)).toList();
+    return entities;
   }
 
   @override
@@ -45,7 +45,7 @@ class _MyProductsPageState extends State<MyProductsPage> {
         backgroundColor: Colors.white,
         elevation: 1,
       ),
-      body: FutureBuilder<List<Product>>(
+      body: FutureBuilder<List<BaseEntity>>(
         future: _futureProducts,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -107,7 +107,7 @@ class _MyProductsPageState extends State<MyProductsPage> {
     );
   }
 
-  Widget _buildProductCard(BuildContext context, Product product) {
+  Widget _buildProductCard(BuildContext context, BaseEntity product) {
     // 基于 HomePage 中的卡片样式复用实现（复制但保持视觉一致）
     return GestureDetector(
       onTap: () {
@@ -142,7 +142,9 @@ class _MyProductsPageState extends State<MyProductsPage> {
                 width: double.infinity,
                 child: CachedNetworkImage(
                   imageUrl:
-                      product.image ??
+                      (product.media.isNotEmpty
+                          ? product.media.first.url
+                          : null) ??
                       'https://picsum.photos/seed/placeholder/500/500',
                   fit: BoxFit.cover,
                   placeholder: (context, url) => Container(
@@ -174,7 +176,7 @@ class _MyProductsPageState extends State<MyProductsPage> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        '¥${product.price.toStringAsFixed(0)}',
+                        '¥${(product.price ?? 0).toString()}',
                         style: const TextStyle(
                           color: Colors.red,
                           fontWeight: FontWeight.bold,
@@ -188,7 +190,8 @@ class _MyProductsPageState extends State<MyProductsPage> {
                             style: TextStyle(color: Colors.grey, fontSize: 10),
                           ),
                           Text(
-                            product.location,
+                            product.location ?? '未知',
+
                             style: const TextStyle(
                               color: Colors.grey,
                               fontSize: 10,
@@ -204,13 +207,13 @@ class _MyProductsPageState extends State<MyProductsPage> {
                       CircleAvatar(
                         radius: 8,
                         backgroundImage: NetworkImage(
-                          product.sellerAvatar ??
+                          (product.extraData['seller_avatar'] as String?) ??
                               'https://picsum.photos/seed/avatar/200/200',
                         ),
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        product.sellerName ?? '未知卖家',
+                        (product.extraData['seller_name'] as String?) ?? '未知卖家',
                         style: const TextStyle(
                           color: Color.fromARGB(255, 174, 74, 74),
                           fontSize: 10,

@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/foundation.dart';
 import '../models/comment_model.dart';
 
 /// 评论服务类 - 处理评论的CRUD操作和业务逻辑
@@ -55,7 +56,7 @@ class CommentService {
 
       return CommentModel.fromJson(response);
     } catch (e) {
-      print('❌ 创建评论失败: $e');
+      debugPrint('❌ 创建评论失败: $e');
       rethrow;
     }
   }
@@ -82,7 +83,7 @@ class CommentService {
           .map((item) => CommentModel.fromJson(item as Map<String, dynamic>))
           .toList();
     } catch (e) {
-      print('❌ 获取评论失败: $e');
+      debugPrint('❌ 获取评论失败: $e');
       rethrow;
     }
   }
@@ -103,7 +104,7 @@ class CommentService {
           .map((item) => CommentModel.fromJson(item as Map<String, dynamic>))
           .toList();
     } catch (e) {
-      print('❌ 获取回复失败: $e');
+      debugPrint('❌ 获取回复失败: $e');
       rethrow;
     }
   }
@@ -183,7 +184,7 @@ class CommentService {
 
       return CommentModel.fromJson(response);
     } catch (e) {
-      print('❌ 更新评论失败: $e');
+      debugPrint('❌ 更新评论失败: $e');
       rethrow;
     }
   }
@@ -217,7 +218,7 @@ class CommentService {
       // 删除评论本身
       await _client.from('comments').delete().eq('id', commentId);
     } catch (e) {
-      print('❌ 删除评论失败: $e');
+      debugPrint('❌ 删除评论失败: $e');
       rethrow;
     }
   }

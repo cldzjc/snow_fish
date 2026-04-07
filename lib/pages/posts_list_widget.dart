@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/entity_service.dart';
+import '../services/comment_service.dart';
 import '../models/base_entity.dart';
-import '../widgets/post_action_bar.dart';
 import '../utils/time_utils.dart';
+import 'post_detail_page.dart';
 
 class PostsListWidget extends StatefulWidget {
   const PostsListWidget({super.key});
@@ -15,11 +16,13 @@ class PostsListWidget extends StatefulWidget {
 
 class _PostsListWidgetState extends State<PostsListWidget> {
   late Future<List<BaseEntity>> _future;
+  final EntityService _entityService = EntityService();
+  final CommentService _commentService = CommentService();
 
   @override
   void initState() {
     super.initState();
-    _future = EntityService().fetchEntities(type: 'post');
+    _future = _entityService.fetchEntities(type: 'post');
   }
 
   // 根据用户ID获取用户资料
@@ -33,6 +36,38 @@ class _PostsListWidgetState extends State<PostsListWidget> {
       return profile ?? {};
     } catch (e) {
       return {};
+    }
+  }
+
+  // 获取帖子统计数据
+  Future<Map<String, int>> _getPostStats(String postId) async {
+    try {
+      final stats = await _entityService.getVoteStats(postId);
+      final commentCount = await _commentService.getCommentCount(
+        entityId: postId,
+      );
+      return {
+        'like_count': stats['like_count'] ?? 0,
+        'comment_count': commentCount,
+      };
+    } catch (e) {
+      return {'like_count': 0, 'comment_count': 0};
+    }
+  }
+
+  // 切换点赞状态
+  Future<void> _toggleLike(String postId) async {
+    try {
+      await _entityService.toggleVote(entityId: postId, score: 5);
+      setState(() {
+        _future = _entityService.fetchEntities(type: 'post');
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('操作失败: $e')));
+      }
     }
   }
 
@@ -230,18 +265,20 @@ class _PostsListWidgetState extends State<PostsListWidget> {
                                   height: 1.5,
                                 ),
                               ),
-                              // 媒体
+                              // 媒体（完整显示，不过度裁剪）
                               if (firstMediaUrl != null)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 8),
-                                  child: SizedBox(
-                                    height: 160,
-                                    width: double.infinity,
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      maxHeight: 400,
+                                      minHeight: 120,
+                                    ),
                                     child: ClipRRect(
                                       borderRadius: BorderRadius.circular(8),
                                       child: CachedNetworkImage(
                                         imageUrl: firstMediaUrl,
-                                        fit: BoxFit.cover,
+                                        fit: BoxFit.contain,
                                         placeholder: (c, u) =>
                                             Container(color: Colors.grey[200]),
                                         errorWidget: (c, u, e) =>
@@ -251,70 +288,55 @@ class _PostsListWidgetState extends State<PostsListWidget> {
                                   ),
                                 ),
                               const SizedBox(height: 12),
-                              // 操作栏：爱心、评论、转发、分享
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceEvenly,
-                                children: [
-                                  _buildActionButton(
-                                    icon: Icons.favorite_border,
-                                    activeIcon: Icons.favorite,
-                                    count: 21,
-                                    isActive: false,
-                                    onTap: () {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(content: Text('点赞成功')),
+                              // 操作栏：爱心、评论（真实数据）
+                              FutureBuilder<Map<String, int>>(
+                                future: _getPostStats(post.id),
+                                builder: (context, statsSnap) {
+                                  final stats =
+                                      statsSnap.data ??
+                                      {'like_count': 0, 'comment_count': 0};
+                                  return FutureBuilder<bool>(
+                                    future: _entityService.hasVoted(
+                                      entityId: post.id,
+                                      score: 5,
+                                    ),
+                                    builder: (context, likedSnap) {
+                                      final isLiked = likedSnap.data ?? false;
+                                      return Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.start,
+                                        children: [
+                                          const SizedBox(width: 8),
+                                          _buildActionButton(
+                                            icon: Icons.favorite_border,
+                                            activeIcon: Icons.favorite,
+                                            count: stats['like_count']!,
+                                            isActive: isLiked,
+                                            onTap: () => _toggleLike(post.id),
+                                          ),
+                                          const SizedBox(width: 32),
+                                          _buildActionButton(
+                                            icon: Icons.comment_outlined,
+                                            activeIcon: Icons.comment,
+                                            count: stats['comment_count']!,
+                                            isActive: false,
+                                            onTap: () {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (context) =>
+                                                      PostDetailPage(
+                                                        postId: post.id,
+                                                      ),
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ],
                                       );
                                     },
-                                  ),
-                                  _buildActionButton(
-                                    icon: Icons.comment_outlined,
-                                    activeIcon: Icons.comment,
-                                    count: 10,
-                                    isActive: false,
-                                    onTap: () {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('评论功能开发中...'),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                  _buildActionButton(
-                                    icon: Icons.repeat_outlined,
-                                    activeIcon: Icons.repeat,
-                                    count: 0,
-                                    isActive: false,
-                                    onTap: () {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('转发功能开发中...'),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                  _buildActionButton(
-                                    icon: Icons.share_outlined,
-                                    activeIcon: Icons.share,
-                                    count: 12,
-                                    isActive: false,
-                                    onTap: () {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('分享功能开发中...'),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ],
+                                  );
+                                },
                               ),
                             ],
                           ),
