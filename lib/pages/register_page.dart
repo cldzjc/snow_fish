@@ -120,7 +120,7 @@ class _RegisterPageState extends State<RegisterPage> {
       await Supabase.instance.client.auth.signUp(
         email: _emailController.text.trim(),
         password: _passwordController.text,
-        data: {'name': _nameController.text.trim()},
+        data: {'name': _nameController.text.trim(), 'role': 'user'},
       );
 
       if (mounted) {

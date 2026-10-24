@@ -5,10 +5,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import '../services/entity_service.dart';
 import '../media_service.dart';
+import '../models/base_entity.dart';
 import 'login_page.dart';
 
 class PublishPostPage extends StatefulWidget {
-  const PublishPostPage({super.key});
+  final BaseEntity? initialPost;
+
+  const PublishPostPage({super.key, this.initialPost});
 
   @override
   State<PublishPostPage> createState() => _PublishPostPageState();
@@ -19,6 +22,16 @@ class _PublishPostPageState extends State<PublishPostPage> {
   final _contentController = TextEditingController(); // 正文内容（必填）
   List<PlatformFile> _pickedImages = []; // 选中的图片文件
   bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final post = widget.initialPost;
+    if (post != null) {
+      _titleController.text = post.title == '动态' ? '' : post.title;
+      _contentController.text = post.content ?? '';
+    }
+  }
 
   // 检查登录状态
   bool _isLoggedIn() {
@@ -52,18 +65,24 @@ class _PublishPostPageState extends State<PublishPostPage> {
     });
 
     try {
-      // 1. 创建帖子实体（使用 EntityService）
+      // 1. 创建或更新帖子实体（使用 EntityService）
       final currentUser = Supabase.instance.client.auth.currentUser;
-
-      final post = await EntityService().createEntity(
-        entityType: 'post',
-        title: _titleController.text.isEmpty ? '动态' : _titleController.text,
-        content: _contentController.text,
-        extraData: {},
-      );
+      final entityService = EntityService();
+      final post = widget.initialPost == null
+          ? await entityService.createEntity(
+              entityType: 'post',
+              title: _titleController.text.isEmpty ? '动态' : _titleController.text,
+              content: _contentController.text,
+              extraData: {},
+            )
+          : await entityService.updateEntity(
+              entityId: widget.initialPost!.id,
+              title: _titleController.text.isEmpty ? '动态' : _titleController.text,
+              content: _contentController.text,
+            );
 
       // 2. 上传图片到帖子
-      if (_pickedImages.isNotEmpty) {
+      if (widget.initialPost == null && _pickedImages.isNotEmpty) {
         final mediaService = MediaService();
         for (final imageFile in _pickedImages) {
           try {
@@ -130,8 +149,8 @@ class _PublishPostPageState extends State<PublishPostPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          '发布帖子',
+        title: Text(
+          widget.initialPost == null ? '发布动态' : '编辑动态',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
@@ -143,8 +162,8 @@ class _PublishPostPageState extends State<PublishPostPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              '发布帖子',
+            Text(
+              widget.initialPost == null ? '发布动态' : '编辑动态',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
@@ -273,7 +292,11 @@ class _PublishPostPageState extends State<PublishPostPage> {
                       )
                     : const Icon(Icons.send),
                 label: Text(
-                  _isLoading ? '发布中...' : '发布帖子',
+                  _isLoading
+                      ? '保存中...'
+                      : widget.initialPost == null
+                      ? '发布动态'
+                      : '保存修改',
                   style: const TextStyle(fontSize: 18),
                 ),
                 style: ElevatedButton.styleFrom(

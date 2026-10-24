@@ -10,6 +10,7 @@ class CommentItem extends StatefulWidget {
   final VoidCallback? onReplyPressed; // 回复按钮回调
   final Function(CommentModel)? onDeleted; // 删除后的回调
   final VoidCallback? onLikeChanged; // 点赞状态变化回调
+  final ValueChanged<String>? onAuthorTap;
 
   const CommentItem({
     Key? key,
@@ -18,6 +19,7 @@ class CommentItem extends StatefulWidget {
     this.onReplyPressed,
     this.onDeleted,
     this.onLikeChanged,
+    this.onAuthorTap,
   }) : super(key: key);
 
   @override
@@ -159,20 +161,27 @@ class _CommentItemState extends State<CommentItem> {
           // 作者信息行
           Row(
             children: [
-              CircleAvatar(
-                radius: 16,
-                backgroundImage: NetworkImage(avatarUrl),
+              InkWell(
+                onTap: () => widget.onAuthorTap?.call(widget.comment.userId),
+                child: CircleAvatar(
+                  radius: 16,
+                  backgroundImage: NetworkImage(avatarUrl),
+                ),
               ),
               SizedBox(width: 8),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      widget.comment.authorNickname ?? '匿名用户',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
+                    InkWell(
+                      onTap: () =>
+                          widget.onAuthorTap?.call(widget.comment.userId),
+                      child: Text(
+                        widget.comment.authorNickname ?? '匿名用户',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
                       ),
                     ),
                     Text(
@@ -268,6 +277,7 @@ class _CommentItemState extends State<CommentItem> {
                 onReplyPressed: widget.onReplyPressed,
                 onDeleted: widget.onDeleted,
                 onLikeChanged: widget.onLikeChanged,
+                onAuthorTap: widget.onAuthorTap,
               );
             }).toList(),
           ],

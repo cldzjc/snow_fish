@@ -236,6 +236,7 @@ class CommentService {
           .from('interactions')
           .select()
           .eq('user_id', currentUser.id)
+          .eq('target_type', 'comment')
           .eq('entity_id', commentId)
           .eq('interaction_type', 'comment_like')
           .maybeSingle();
@@ -254,6 +255,7 @@ class CommentService {
         // 未点赞，添加点赞
         await _client.from('interactions').insert({
           'user_id': currentUser.id,
+          'target_type': 'comment',
           'entity_id': commentId,
           'interaction_type': 'comment_like',
           'score': 1,
@@ -283,6 +285,7 @@ class CommentService {
           .from('interactions')
           .select()
           .eq('user_id', currentUser.id)
+          .eq('target_type', 'comment')
           .eq('entity_id', commentId)
           .eq('interaction_type', 'comment_like')
           .maybeSingle();

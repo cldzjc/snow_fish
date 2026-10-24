@@ -22,6 +22,7 @@ class _PostActionBarState extends State<PostActionBar> {
   late final EntityService _entityService;
   int _likeCount = 0;
   bool _isLiked = false;
+  bool _isFavorite = false;
   bool _isLoading = true;
 
   @override
@@ -39,11 +40,13 @@ class _PostActionBarState extends State<PostActionBar> {
         entityId: widget.postId,
         score: 5,
       );
+      final isFavorite = await _entityService.hasFavorite(widget.postId);
 
       if (mounted) {
         setState(() {
           _likeCount = stats['like_count'] ?? 0;
           _isLiked = hasLiked;
+          _isFavorite = isFavorite;
           _isLoading = false;
         });
       }
@@ -51,6 +54,23 @@ class _PostActionBarState extends State<PostActionBar> {
       debugPrint('❌ 加载统计数据失败: $e');
       if (mounted) {
         setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_isLoading) return;
+    final previous = _isFavorite;
+    setState(() => _isFavorite = !_isFavorite);
+    try {
+      final result = await _entityService.toggleFavorite(widget.postId);
+      if (mounted) setState(() => _isFavorite = result);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isFavorite = previous);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('收藏失败: $e')));
       }
     }
   }
@@ -109,29 +129,52 @@ class _PostActionBarState extends State<PostActionBar> {
 
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-      child: GestureDetector(
-        onTap: _toggleLike,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 爱心图标
-            Icon(
-              _isLiked ? Icons.favorite : Icons.favorite_border,
-              size: 20,
-              color: _isLiked ? Colors.red[400] : Colors.grey[600],
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: _toggleLike,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 爱心图标
+                Icon(
+                  _isLiked ? Icons.favorite : Icons.favorite_border,
+                  size: 20,
+                  color: _isLiked ? Colors.red[400] : Colors.grey[600],
+                ),
+                SizedBox(width: 6),
+                // 点赞数
+                Text(
+                  _likeCount > 0 ? _likeCount.toString() : '',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
-            SizedBox(width: 6),
-            // 点赞数
-            Text(
-              _likeCount > 0 ? _likeCount.toString() : '',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
-                fontWeight: FontWeight.w500,
-              ),
+          ),
+          const SizedBox(width: 20),
+          GestureDetector(
+            onTap: _toggleFavorite,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  _isFavorite ? Icons.bookmark : Icons.bookmark_border,
+                  size: 20,
+                  color: _isFavorite ? Colors.amber[700] : Colors.grey[600],
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  _isFavorite ? '已收藏' : '收藏',
+                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

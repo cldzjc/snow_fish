@@ -266,6 +266,154 @@ class EntityService {
     }
   }
 
+  // ============ C2C 专用操作 ============
+
+  /// 切换商品的隐藏状态（卖家可手动隐藏/显示商品）
+  /// 返回更新后的实体
+  Future<BaseEntity?> toggleEntityHidden({
+    required String entityId,
+    required bool isHidden,
+  }) async {
+    try {
+      final currentUser = _client.auth.currentUser;
+      if (currentUser == null) {
+        throw Exception('用户未登录');
+      }
+
+      // 检查权限：只有发布者可以隐藏自己的商品
+      final entity = await fetchEntity(entityId);
+      if (entity == null || entity.userId != currentUser.id) {
+        throw Exception('权限不足');
+      }
+
+      return await updateEntity(
+        entityId: entityId,
+        extraData: {...entity.extraData, 'is_hidden': isHidden},
+      );
+    } catch (e) {
+      _handleError(e);
+      rethrow;
+    }
+  }
+
+  /// 获取用户发布的所有商品（包括已隐藏）
+  /// 用于"我发布的"页面
+  Future<List<BaseEntity>> getMyListings({
+    String? userId,
+    String entityType = 'product',
+  }) async {
+    try {
+      final targetUserId = userId ?? _client.auth.currentUser?.id;
+      if (targetUserId == null) return [];
+
+      final response = await _client
+          .from('entities')
+          .select('*, media(*)')
+          .eq('user_id', targetUserId)
+          .eq('entity_type', entityType)
+          .order('created_at', ascending: false);
+
+      return (response as List)
+          .map((item) => BaseEntity.fromJson(item as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      _handleError(e);
+      rethrow;
+    }
+  }
+
+  /// 查询已审核且未隐藏的商品（用于首页展示）
+  /// 仅返回前端可显示的商品
+  Future<List<BaseEntity>> queryProductsByAuditStatus({
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    try {
+      // 先查询商品，再在客户端按 C2C 规则过滤，避免 JSON 路径过滤兼容性问题
+      final response = await _client
+          .from('entities')
+          .select('*, media(*)')
+          .eq('entity_type', 'product')
+          .order('created_at', ascending: false);
+
+      final allProducts = (response as List)
+          .map((item) => BaseEntity.fromJson(item as Map<String, dynamic>))
+          .toList();
+
+      final visibleProducts = allProducts
+          .where((item) => item.auditStatus == 'approved' && !item.isHidden)
+          .toList();
+
+      if (offset >= visibleProducts.length) {
+        return [];
+      }
+
+      final end = (offset + limit) > visibleProducts.length
+          ? visibleProducts.length
+          : (offset + limit);
+
+      return visibleProducts.sublist(offset, end);
+    } catch (e) {
+      _handleError(e);
+      // 降级处理：如果过滤失败，返回空列表而不是抛异常
+      return [];
+    }
+  }
+
+  /// 商品关键词搜索（多词 AND，单词跨字段 OR）
+  /// 示例：atomic s9 fis165
+  Future<List<BaseEntity>> searchProductsByKeywords({
+    required String keyword,
+    int limit = 50,
+  }) async {
+    try {
+      final normalized = keyword.toLowerCase().trim();
+      if (normalized.isEmpty) {
+        return queryProductsByAuditStatus(limit: limit);
+      }
+
+      final terms = normalized
+          .split(RegExp(r'[^a-z0-9\u4e00-\u9fa5]+'))
+          .where((t) => t.isNotEmpty)
+          .toList();
+
+      if (terms.isEmpty) {
+        return queryProductsByAuditStatus(limit: limit);
+      }
+
+      final response = await _client
+          .from('entities')
+          .select('*, media(*)')
+          .eq('entity_type', 'product')
+          .order('created_at', ascending: false)
+          .limit(300);
+
+      final allProducts = (response as List)
+          .map((item) => BaseEntity.fromJson(item as Map<String, dynamic>))
+          .toList();
+
+      final visibleProducts = allProducts
+          .where((item) => item.auditStatus == 'approved' && !item.isHidden)
+          .where((item) {
+            final text = [
+              item.title,
+              item.content ?? '',
+              item.sellerName,
+              '${item.location ?? ''}',
+              item.conditionLevel,
+            ].join(' ').toLowerCase();
+
+            return terms.every((term) => text.contains(term));
+          })
+          .toList();
+
+      return visibleProducts.take(limit).toList();
+    } catch (e) {
+      _handleError(e);
+      return [];
+    }
+  }
+
   // ============ 互动操作 ============
 
   /// 点赞/取消点赞实体
@@ -299,6 +447,7 @@ class EntityService {
           .from('interactions')
           .select()
           .eq('user_id', currentUser.id)
+          .eq('target_type', 'entity')
           .eq('entity_id', entityId)
           .eq('interaction_type', _getInteractionType(entity.entityType, score))
           .maybeSingle();
@@ -319,12 +468,14 @@ class EntityService {
             .from('interactions')
             .delete()
             .eq('user_id', currentUser.id)
+            .eq('target_type', 'entity')
             .eq('entity_id', entityId)
             .eq('interaction_type', oppositeType);
 
         // 插入新的评分
         await _client.from('interactions').insert({
           'user_id': currentUser.id,
+          'target_type': 'entity',
           'entity_id': entityId,
           'interaction_type': _getInteractionType(entity.entityType, score),
           'score': score,
@@ -342,9 +493,29 @@ class EntityService {
   /// 返回 {'like_count': 10, 'comment_count': 5} 等
   Future<Map<String, int>> getVoteStats(String entityId) async {
     try {
+      try {
+        final counter = await _client
+            .from('interaction_counters')
+            .select('like_count, dislike_count')
+            .eq('target_type', 'entity')
+            .eq('target_id', entityId)
+            .maybeSingle();
+
+        if (counter != null) {
+          return {
+            'like_count': (counter['like_count'] as num?)?.toInt() ?? 0,
+            'dislike_count': (counter['dislike_count'] as num?)?.toInt() ?? 0,
+            'comment_count': 0,
+          };
+        }
+      } catch (_) {
+        // 计数表还未就绪时，回退到明细表。
+      }
+
       final response = await _client
           .from('interactions')
           .select('interaction_type')
+          .eq('target_type', 'entity')
           .eq('entity_id', entityId);
 
       final stats = <String, int>{};
@@ -387,6 +558,7 @@ class EntityService {
           .from('interactions')
           .select()
           .eq('user_id', currentUser.id)
+          .eq('target_type', 'entity')
           .eq('entity_id', entityId)
           .eq('interaction_type', _getInteractionType(entity.entityType, score))
           .maybeSingle();
@@ -396,6 +568,53 @@ class EntityService {
       _handleError(e);
       return false;
     }
+
+  }
+
+  Future<bool> toggleFavorite(String entityId) async {
+      final currentUser = _client.auth.currentUser;
+      if (currentUser == null) throw Exception('用户未登录');
+
+      final existing = await _client
+          .from('interactions')
+          .select('id')
+          .eq('user_id', currentUser.id)
+          .eq('target_type', 'entity')
+          .eq('entity_id', entityId)
+          .eq('interaction_type', 'favorite')
+          .limit(1)
+          .maybeSingle();
+
+      if (existing != null) {
+        await _client.from('interactions').delete().eq('id', existing['id']);
+        return false;
+      }
+
+      await _client.from('interactions').insert({
+        'user_id': currentUser.id,
+        'target_type': 'entity',
+        'entity_id': entityId,
+        'interaction_type': 'favorite',
+        'score': 1,
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+      });
+      return true;
+    }
+
+  Future<bool> hasFavorite(String entityId) async {
+      final currentUser = _client.auth.currentUser;
+      if (currentUser == null) return false;
+
+      final existing = await _client
+          .from('interactions')
+          .select('id')
+          .eq('user_id', currentUser.id)
+          .eq('target_type', 'entity')
+          .eq('entity_id', entityId)
+          .eq('interaction_type', 'favorite')
+          .limit(1)
+          .maybeSingle();
+      return existing != null;
   }
 
   // ============ 辅助方法 ============

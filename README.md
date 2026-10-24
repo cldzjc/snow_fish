@@ -1,15 +1,26 @@
-# Snow Fish - 二手交易平台
+# Snow Fish - 滑雪内容社区
 
-一个基于 Flutter + Supabase 构建的现代化二手交易应用。
+一个面向滑雪人群、以 UGC 内容和 C2C 闲置雪具为核心的 Flutter + Supabase 社区应用。
 
-## 🎯 项目特性
+项目背景、当前功能边界和后续开发默认原则见：
+[docs/PROJECT_CONTEXT.md](docs/PROJECT_CONTEXT.md)
 
-- ✨ **通用实体架构**: 灵活支持多种内容类型（商品、帖子、服务等）
+功能与 Supabase 表的对应关系、保留/删除候选见：
+[docs/FUNCTION_DATA_MAPPING.md](docs/FUNCTION_DATA_MAPPING.md)
+
+## 项目特性
+
+- ✨ **UGC 内容社区**: 支持约滑、约饭、经验分享和其他滑雪相关内容
+- 🏂 **C2C 闲置雪具**: 将二手雪具作为内容类型发布和浏览
+- ✨ **通用实体架构**: 使用 `entities` 统一承载帖子和闲置内容
 - 🌍 **Supabase 东京节点**: 优化的数据库服务，支持实时功能
 - 📱 **跨平台支持**: iOS、Android、Web、macOS、Windows、Linux
-- 🖼️ **媒体管理**: 优化的图片/视频上传和缓存
-- 👤 **用户系统**: 完整的身份认证和资料管理
-- 💬 **互动功能**: 评论、点赞、分享等社交功能
+- 🖼️ **媒体管理**: 图片/视频上传、展示和 OSS 存储
+- 👤 **用户主页**: 资料编辑、其他用户主页和动态列表
+- 💬 **互动功能**: 点赞、收藏、评论、回复和评论点赞
+- 🛡️ **内容治理**: 管理员审核 UGC 内容
+
+当前阶段只实现 UGC 论坛，不包含订单、支付、收货地址或商户交易流程。
 
 ## 📋 最近更新（2026年2月）
 
@@ -49,10 +60,8 @@ lib/
 ├── main.dart                    # 应用入口
 ├── supabase_client.dart         # Supabase 配置
 ├── media_service.dart           # 媒体服务
-├── post_service.dart            # 帖子服务
-├── product_service.dart         # 商品服务
 ├── models/                      # 数据模型
-│   ├── base_entity.dart         # 通用实体（商品、帖子等）
+│   ├── base_entity.dart         # UGC 动态实体
 │   ├── media_model.dart         # 媒体模型
 │   ├── user_profile.dart        # 用户资料模型
 │   └── index.dart               # 模型导出
@@ -69,10 +78,10 @@ lib/
 ## 📚 文档
 
 ### 核心文档
-- [PROJECT_COMPLETION_REPORT.md](PROJECT_COMPLETION_REPORT.md) - 完成报告和总结
-- [REFACTORING_SUMMARY.md](REFACTORING_SUMMARY.md) - 重构详情和 Schema 说明
-- [ARCHITECTURE_GUIDE.md](ARCHITECTURE_GUIDE.md) - 开发指南和代码示例
-- [MIGRATION_CHECKLIST.md](MIGRATION_CHECKLIST.md) - 验证清单和故障排除
+- [docs/PROJECT_CONTEXT.md](docs/PROJECT_CONTEXT.md) - 项目背景、现状和开发上下文
+- [docs/FUNCTION_DATA_MAPPING.md](docs/FUNCTION_DATA_MAPPING.md) - 功能、代码与 Supabase 表映射
+- [QUICK_REFERENCE_2024.md](QUICK_REFERENCE_2024.md) - 常用入口和命令速查
+- [DOCUMENTATION_GUIDE.md](DOCUMENTATION_GUIDE.md) - 文档导航
 
 ## 🏗️ 数据模型
 
@@ -98,12 +107,14 @@ print('¥${product.price}');
 print(product.location);
 ```
 
-### 数据库表
+### 核心数据库表
 - `entities` - 通用实体表
 - `media` - 媒体表
 - `user_profiles` - 用户资料表
 - `comments` - 评论表
 - `interactions` - 互动表
+
+交易相关表仍可能存在于 Supabase 历史数据库中，但不再由当前 Flutter 应用使用。
 
 详见 [REFACTORING_SUMMARY.md](REFACTORING_SUMMARY.md)
 

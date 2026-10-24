@@ -9,6 +9,8 @@ import '../widgets/post_action_bar.dart';
 import '../widgets/comment_item.dart';
 import '../widgets/comment_input_sheet.dart';
 import '../utils/time_utils.dart';
+import 'image_gallery_page.dart';
+import 'profile_page.dart';
 
 class PostDetailPage extends StatefulWidget {
   final String postId;
@@ -113,6 +115,16 @@ class _PostDetailPageState extends State<PostDetailPage> {
     );
   }
 
+  void _openMediaGallery(List<String> urls, int initialIndex) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            ImageGalleryPage(imageUrls: urls, initialIndex: initialIndex),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -193,6 +205,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                             onLikeChanged: () {
                               // 可选：更新点赞计数
                             },
+                            onAuthorTap: _openUserProfile,
                           );
                         }, childCount: _comments.length),
                       ),
@@ -208,6 +221,13 @@ class _PostDetailPageState extends State<PostDetailPage> {
         child: Icon(Icons.comment),
         tooltip: '写评论',
       ),
+    );
+  }
+
+  void _openUserProfile(String userId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => ProfilePage(userId: userId)),
     );
   }
 
@@ -230,20 +250,26 @@ class _PostDetailPageState extends State<PostDetailPage> {
           // 作者信息
           Row(
             children: [
-              CircleAvatar(
-                radius: 24,
-                backgroundImage: NetworkImage(authorAvatar),
+              InkWell(
+                onTap: () => _openUserProfile(post.userId),
+                child: CircleAvatar(
+                  radius: 24,
+                  backgroundImage: NetworkImage(authorAvatar),
+                ),
               ),
               SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      authorName,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
+                    InkWell(
+                      onTap: () => _openUserProfile(post.userId),
+                      child: Text(
+                        authorName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
                       ),
                     ),
                     Text(
@@ -288,14 +314,18 @@ class _PostDetailPageState extends State<PostDetailPage> {
                 itemCount: media.length,
                 itemBuilder: (context, index) {
                   final m = media[index];
+                  final imageUrls = media.map((e) => e.url).toList();
                   return Container(
                     margin: EdgeInsets.only(right: 8),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: CachedNetworkImage(
-                        imageUrl: m.url,
-                        fit: BoxFit.cover,
-                        width: 300,
+                    child: GestureDetector(
+                      onTap: () => _openMediaGallery(imageUrls, index),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: CachedNetworkImage(
+                          imageUrl: m.url,
+                          fit: BoxFit.cover,
+                          width: 300,
+                        ),
                       ),
                     ),
                   );
