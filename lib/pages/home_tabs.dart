@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'home_page.dart';
@@ -12,17 +14,24 @@ class HomeTabs extends StatefulWidget {
 
 class _HomeTabsState extends State<HomeTabs> {
   int _currentIndex = 0;
+  late final StreamSubscription<AuthState> _authSubscription;
 
   @override
   void initState() {
     super.initState();
 
     // 仅用于触发页面刷新，不再缓存页面列表，避免热重载后的索引错位。
-    Supabase.instance.client.auth.onAuthStateChange.listen((event) {
+    _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((event) {
       if (mounted) {
         setState(() {});
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _authSubscription.cancel();
+    super.dispose();
   }
 
   @override

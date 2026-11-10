@@ -19,6 +19,8 @@ class _PostsListWidgetState extends State<PostsListWidget> {
   late Future<List<BaseEntity>> _future;
   final EntityService _entityService = EntityService();
   final CommentService _commentService = CommentService();
+  final Map<String, Map<String, dynamic>> _profileCache = {};
+  bool _profilesLoading = false;
 
   void _openPostDetail(String postId) {
     Navigator.push(
@@ -31,21 +33,35 @@ class _PostsListWidgetState extends State<PostsListWidget> {
   void initState() {
     super.initState();
     _future = _entityService.fetchEntities(type: 'post');
+    _future.then(_loadProfiles).catchError((_) {});
   }
 
-  // 根据用户ID获取用户资料
-  Future<Map<String, dynamic>> _getUserProfile(String userId) async {
+  Future<void> _loadProfiles(List<BaseEntity> posts) async {
+    final userIds = posts.map((post) => post.userId).toSet().toList();
+    final missingIds = userIds
+        .where((userId) => !_profileCache.containsKey(userId))
+        .toList();
+    if (missingIds.isEmpty || !mounted) return;
+
+    setState(() => _profilesLoading = true);
     try {
-      final profile = await Supabase.instance.client
+      final response = await Supabase.instance.client
           .from('user_profiles')
           .select()
-          .eq('id', userId)
-          .maybeSingle();
-      return profile ?? {};
+          .inFilter('id', missingIds);
+      for (final profile in response as List) {
+        final map = Map<String, dynamic>.from(profile as Map);
+        final id = map['id'] as String?;
+        if (id != null) _profileCache[id] = map;
+      }
     } catch (e) {
-      return {};
+      debugPrint('加载作者资料失败: $e');
+    } finally {
+      if (mounted) setState(() => _profilesLoading = false);
     }
   }
+
+  Map<String, dynamic>? _profileFor(String userId) => _profileCache[userId];
 
   // 获取帖子统计数据
   Future<Map<String, int>> _getPostStats(String postId) async {
@@ -70,6 +86,7 @@ class _PostsListWidgetState extends State<PostsListWidget> {
       setState(() {
         _future = _entityService.fetchEntities(type: 'post');
       });
+      _future.then(_loadProfiles).catchError((_) {});
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -136,9 +153,10 @@ class _PostsListWidgetState extends State<PostsListWidget> {
                 Text(display),
                 const SizedBox(height: 8),
                 ElevatedButton(
-                  onPressed: () => setState(
-                    () => _future = EntityService().fetchEntities(type: 'post'),
-                  ),
+                  onPressed: () => setState(() {
+                    _future = EntityService().fetchEntities(type: 'post');
+                    _future.then(_loadProfiles).catchError((_) {});
+                  }),
                   child: const Text('重试'),
                 ),
               ],
@@ -159,267 +177,271 @@ class _PostsListWidgetState extends State<PostsListWidget> {
             final content = post.content ?? '';
             final title = post.title;
 
-            // 异步获取用户资料并显示
-            return FutureBuilder<Map<String, dynamic>>(
-              future: _getUserProfile(post.userId),
-              builder: (context, userSnap) {
-                final userProfile = userSnap.data ?? {};
-                final authorName =
-                    (userProfile['nickname'] as String?) ?? '匿名用户';
-                final authorAvatar =
-                    (userProfile['avatar_url'] as String?) ??
-                    'https://api.dicebear.com/7.x/avataaars/svg?seed=${post.userId}';
+            final userProfile = _profileFor(post.userId);
+            final authorName = userProfile == null
+                ? (_profilesLoading ? '加载作者资料…' : '用户')
+                : ((userProfile['nickname'] as String?)?.trim().isNotEmpty ==
+                          true
+                      ? userProfile['nickname'] as String
+                      : '用户');
+            final authorAvatar = userProfile?['avatar_url'] as String?;
 
-                return Card(
-                  margin: const EdgeInsets.symmetric(vertical: 8),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () => _openPostDetail(post.id),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 12,
-                        horizontal: 12,
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+            return Card(
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => _openPostDetail(post.id),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 12,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 左侧：头像 + 竖线
+                      Column(
                         children: [
-                          // 左侧：头像 + 竖线
-                          Column(
-                            children: [
-                              InkWell(
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        ProfilePage(userId: post.userId),
-                                  ),
-                                ),
-                                child: CircleAvatar(
-                                  radius: 22,
-                                  backgroundImage: NetworkImage(authorAvatar),
-                                ),
+                          InkWell(
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    ProfilePage(userId: post.userId),
                               ),
-                              Container(
-                                width: 2,
-                                height: 40,
-                                color: Colors.grey[300],
-                                margin: const EdgeInsets.symmetric(vertical: 8),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(width: 12),
-                          // 右侧：用户名、时间、菜单和内容
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // 用户名 + 时间
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          InkWell(
-                                            onTap: () => Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (_) => ProfilePage(
-                                                  userId: post.userId,
-                                                ),
-                                              ),
-                                            ),
-                                            child: Text(
-                                              authorName,
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 14,
-                                              ),
-                                            ),
-                                          ),
-                                          Text(
-                                            TimeUtils.formatRelativeTime(
-                                              post.createdAt,
-                                            ),
-                                            style: TextStyle(
-                                              color: Colors.grey[600],
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                // 标题
-                                Text(
-                                  title,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 15,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                // 内容
-                                Text(
-                                  content.length > 150
-                                      ? '${content.substring(0, 150)}...'
-                                      : content,
-                                  style: const TextStyle(
-                                    color: Colors.grey,
-                                    fontSize: 14,
-                                    height: 1.5,
-                                  ),
-                                ),
-                                // 媒体（支持多图左右滑动）
-                                if (media.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 8),
-                                    child: LayoutBuilder(
-                                      builder: (context, constraints) {
-                                        final isMulti = media.length > 1;
-                                        final imageWidth = isMulti
-                                            ? constraints.maxWidth * 0.88
-                                            : constraints.maxWidth;
-
-                                        return ConstrainedBox(
-                                          constraints: const BoxConstraints(
-                                            maxHeight: 260,
-                                            minHeight: 120,
-                                          ),
-                                          child: SizedBox(
-                                            height: 220,
-                                            child: Stack(
-                                              children: [
-                                                ListView.separated(
-                                                  scrollDirection:
-                                                      Axis.horizontal,
-                                                  itemCount: media.length,
-                                                  separatorBuilder: (_, __) =>
-                                                      const SizedBox(width: 8),
-                                                  itemBuilder: (context, index) {
-                                                    return ClipRRect(
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            8,
-                                                          ),
-                                                      child: SizedBox(
-                                                        width: imageWidth,
-                                                        child: CachedNetworkImage(
-                                                          imageUrl:
-                                                              media[index].url,
-                                                          fit: BoxFit.cover,
-                                                          placeholder: (c, u) =>
-                                                              Container(
-                                                                color: Colors
-                                                                    .grey[200],
-                                                              ),
-                                                          errorWidget:
-                                                              (
-                                                                c,
-                                                                u,
-                                                                e,
-                                                              ) => const Icon(
-                                                                Icons
-                                                                    .broken_image,
-                                                              ),
-                                                        ),
-                                                      ),
-                                                    );
-                                                  },
-                                                ),
-                                                if (isMulti)
-                                                  Positioned(
-                                                    right: 8,
-                                                    bottom: 8,
-                                                    child: Container(
-                                                      padding:
-                                                          const EdgeInsets.symmetric(
-                                                            horizontal: 8,
-                                                            vertical: 4,
-                                                          ),
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.black54,
-                                                        borderRadius:
-                                                            BorderRadius.circular(
-                                                              999,
-                                                            ),
-                                                      ),
-                                                      child: Text(
-                                                        '${media.length} 图',
-                                                        style: const TextStyle(
-                                                          color: Colors.white,
-                                                          fontSize: 11,
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                              ],
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                const SizedBox(height: 12),
-                                // 操作栏：爱心、评论（真实数据）
-                                FutureBuilder<Map<String, int>>(
-                                  future: _getPostStats(post.id),
-                                  builder: (context, statsSnap) {
-                                    final stats =
-                                        statsSnap.data ??
-                                        {'like_count': 0, 'comment_count': 0};
-                                    return FutureBuilder<bool>(
-                                      future: _entityService.hasVoted(
-                                        entityId: post.id,
-                                        score: 5,
-                                      ),
-                                      builder: (context, likedSnap) {
-                                        final isLiked = likedSnap.data ?? false;
-                                        return Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.start,
-                                          children: [
-                                            const SizedBox(width: 8),
-                                            _buildActionButton(
-                                              icon: Icons.favorite_border,
-                                              activeIcon: Icons.favorite,
-                                              count: stats['like_count']!,
-                                              isActive: isLiked,
-                                              onTap: () => _toggleLike(post.id),
-                                            ),
-                                            const SizedBox(width: 32),
-                                            _buildActionButton(
-                                              icon: Icons.comment_outlined,
-                                              activeIcon: Icons.comment,
-                                              count: stats['comment_count']!,
-                                              isActive: false,
-                                              onTap: () =>
-                                                  _openPostDetail(post.id),
-                                            ),
-                                          ],
-                                        );
-                                      },
-                                    );
-                                  },
-                                ),
-                              ],
                             ),
+                            child: _buildAvatar(authorAvatar, post.userId),
+                          ),
+                          Container(
+                            width: 2,
+                            height: 40,
+                            color: Colors.grey[300],
+                            margin: const EdgeInsets.symmetric(vertical: 8),
                           ),
                         ],
                       ),
-                    ),
+                      const SizedBox(width: 12),
+                      // 右侧：用户名、时间、菜单和内容
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // 用户名 + 时间
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      InkWell(
+                                        onTap: () => Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => ProfilePage(
+                                              userId: post.userId,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          authorName,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ),
+                                      Text(
+                                        TimeUtils.formatRelativeTime(
+                                          post.createdAt,
+                                        ),
+                                        style: TextStyle(
+                                          color: Colors.grey[600],
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            // 标题
+                            Text(
+                              title,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            // 内容
+                            Text(
+                              content.length > 150
+                                  ? '${content.substring(0, 150)}...'
+                                  : content,
+                              style: const TextStyle(
+                                color: Colors.grey,
+                                fontSize: 14,
+                                height: 1.5,
+                              ),
+                            ),
+                            // 媒体（支持多图左右滑动）
+                            if (media.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    final isMulti = media.length > 1;
+                                    final imageWidth = isMulti
+                                        ? constraints.maxWidth * 0.88
+                                        : constraints.maxWidth;
+
+                                    return ConstrainedBox(
+                                      constraints: const BoxConstraints(
+                                        maxHeight: 260,
+                                        minHeight: 120,
+                                      ),
+                                      child: SizedBox(
+                                        height: 220,
+                                        child: Stack(
+                                          children: [
+                                            ListView.separated(
+                                              scrollDirection: Axis.horizontal,
+                                              itemCount: media.length,
+                                              separatorBuilder: (_, __) =>
+                                                  const SizedBox(width: 8),
+                                              itemBuilder: (context, index) {
+                                                return ClipRRect(
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                  child: SizedBox(
+                                                    width: imageWidth,
+                                                    child: CachedNetworkImage(
+                                                      imageUrl:
+                                                          media[index].url,
+                                                      fit: BoxFit.cover,
+                                                      placeholder: (c, u) =>
+                                                          Container(
+                                                            color: Colors
+                                                                .grey[200],
+                                                          ),
+                                                      errorWidget: (c, u, e) =>
+                                                          const Icon(
+                                                            Icons.broken_image,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                            ),
+                                            if (isMulti)
+                                              Positioned(
+                                                right: 8,
+                                                bottom: 8,
+                                                child: Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 4,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.black54,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          999,
+                                                        ),
+                                                  ),
+                                                  child: Text(
+                                                    '${media.length} 图',
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            const SizedBox(height: 12),
+                            // 操作栏：爱心、评论（真实数据）
+                            FutureBuilder<Map<String, int>>(
+                              future: _getPostStats(post.id),
+                              builder: (context, statsSnap) {
+                                final stats =
+                                    statsSnap.data ??
+                                    {'like_count': 0, 'comment_count': 0};
+                                return FutureBuilder<bool>(
+                                  future: _entityService.hasVoted(
+                                    entityId: post.id,
+                                    score: 5,
+                                  ),
+                                  builder: (context, likedSnap) {
+                                    final isLiked = likedSnap.data ?? false;
+                                    return Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.start,
+                                      children: [
+                                        const SizedBox(width: 8),
+                                        _buildActionButton(
+                                          icon: Icons.favorite_border,
+                                          activeIcon: Icons.favorite,
+                                          count: stats['like_count']!,
+                                          isActive: isLiked,
+                                          onTap: () => _toggleLike(post.id),
+                                        ),
+                                        const SizedBox(width: 32),
+                                        _buildActionButton(
+                                          icon: Icons.comment_outlined,
+                                          activeIcon: Icons.comment,
+                                          count: stats['comment_count']!,
+                                          isActive: false,
+                                          onTap: () => _openPostDetail(post.id),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                );
-              },
+                ),
+              ),
             );
           },
         );
       },
+    );
+  }
+
+  Widget _buildAvatar(String? avatarUrl, String userId) {
+    if (avatarUrl == null || avatarUrl.isEmpty) {
+      return CircleAvatar(
+        radius: 22,
+        child: _profilesLoading
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.person_outline),
+      );
+    }
+    return CircleAvatar(
+      radius: 22,
+      backgroundImage: CachedNetworkImageProvider(avatarUrl),
+      onBackgroundImageError: (_, __) {},
     );
   }
 }

@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -10,150 +13,105 @@ class RegisterPage extends StatefulWidget {
 
 class _RegisterPageState extends State<RegisterPage> {
   final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
   final _nameController = TextEditingController();
-  final _verificationCodeController = TextEditingController();
-
+  final _otpController = TextEditingController();
+  Timer? _countdownTimer;
   bool _isLoading = false;
-  bool _codeSent = false;
-  String? _generatedCode;
+  bool _otpSent = false;
+  int _secondsRemaining = 0;
 
-  // 发送验证码
-  Future<void> _sendVerificationCode() async {
-    if (_emailController.text.isEmpty || _nameController.text.isEmpty) {
-      _showError('请先填写用户名和邮箱');
+  Future<void> _sendCode() async {
+    final email = _emailController.text.trim();
+    final name = _nameController.text.trim();
+
+    if (name.isEmpty) {
+      _showError('请输入用户名');
       return;
     }
-
-    if (!RegExp(
-      r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-    ).hasMatch(_emailController.text)) {
+    if (!_isValidEmail(email)) {
       _showError('请输入有效的邮箱地址');
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
-
+    setState(() => _isLoading = true);
     try {
-      // 生成验证码
-      _generatedCode = _generateVerificationCode();
-
-      // 模拟发送邮件 - 在实际项目中，这里应该调用后端API
-      // 为了演示，我们显示验证码对话框
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('验证码已发送'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('您的验证码是：'),
-                const SizedBox(height: 8),
-                Text(
-                  _generatedCode!,
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blue,
-                    letterSpacing: 2,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  '（学习项目演示用，实际应用中不会显示）',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('确定'),
-              ),
-            ],
-          ),
-        );
-      }
-
-      setState(() {
-        _codeSent = true;
-      });
-
-      _showSuccess('验证码已发送到您的邮箱');
+      await Supabase.instance.client.auth.signInWithOtp(
+        email: email,
+        shouldCreateUser: true,
+        data: {'name': name, 'role': 'user'},
+      );
+      if (!mounted) return;
+      setState(() => _otpSent = true);
+      _startCountdown();
+      _showSuccess('验证码已发送，请检查邮箱');
+    } on SocketException {
+      _showError('网络无法连接，请检查网络设置');
+    } on AuthException catch (e) {
+      _showError(e.message);
     } catch (e) {
-      _showError('发送验证码失败: $e');
+      _showError('验证码发送失败: $e');
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // 完成注册
-  Future<void> _completeRegistration() async {
-    if (_verificationCodeController.text != _generatedCode) {
-      _showError('验证码错误，请重新输入');
+  Future<void> _verifyCode() async {
+    final email = _emailController.text.trim();
+    final code = _otpController.text.trim();
+    if (code.length != 6 || int.tryParse(code) == null) {
+      _showError('请输入邮件中的6位数字验证码');
       return;
     }
 
-    if (_passwordController.text != _confirmPasswordController.text) {
-      _showError('两次输入的密码不一致');
-      return;
-    }
-
-    if (_passwordController.text.length < 6) {
-      _showError('密码长度至少6位');
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-    });
-
+    setState(() => _isLoading = true);
     try {
-      await Supabase.instance.client.auth.signUp(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-        data: {'name': _nameController.text.trim(), 'role': 'user'},
+      await Supabase.instance.client.auth.verifyOTP(
+        email: email,
+        token: code,
+        type: OtpType.email,
       );
-
       if (mounted) {
-        _showSuccess('注册成功！请检查邮箱进行验证');
-        // 注册成功后返回登录页
-        Navigator.of(context).pop();
+        _showSuccess('注册成功');
+        Navigator.of(context).popUntil((route) => route.isFirst);
       }
     } on AuthException catch (e) {
       _showError(e.message);
     } catch (e) {
-      _showError('注册失败: $e');
+      _showError('验证码验证失败: $e');
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // 生成6位随机验证码
-  String _generateVerificationCode() {
-    return (100000 + (DateTime.now().millisecondsSinceEpoch % 900000))
-        .toString();
+  void _startCountdown() {
+    _countdownTimer?.cancel();
+    setState(() => _secondsRemaining = 60);
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_secondsRemaining <= 1) {
+        timer.cancel();
+        setState(() => _secondsRemaining = 0);
+      } else {
+        setState(() => _secondsRemaining--);
+      }
+    });
   }
 
+  bool _isValidEmail(String email) =>
+      RegExp(r'^[\w.-]+@([\w-]+\.)+[\w-]{2,}$').hasMatch(email);
+
   void _showError(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
   }
 
   void _showSuccess(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.green),
     );
@@ -161,11 +119,10 @@ class _RegisterPageState extends State<RegisterPage> {
 
   @override
   void dispose() {
+    _countdownTimer?.cancel();
     _emailController.dispose();
-    _passwordController.dispose();
-    _confirmPasswordController.dispose();
     _nameController.dispose();
-    _verificationCodeController.dispose();
+    _otpController.dispose();
     super.dispose();
   }
 
@@ -174,7 +131,7 @@ class _RegisterPageState extends State<RegisterPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('注册')),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
@@ -184,23 +141,23 @@ class _RegisterPageState extends State<RegisterPage> {
               style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            const Text('加入我们的二手交易社区', style: TextStyle(color: Colors.grey)),
+            const Text('加入 Snow Fish 滑雪内容社区',
+                style: TextStyle(color: Colors.grey)),
             const SizedBox(height: 40),
-
-            // 用户名输入
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: '用户名',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.person),
+            if (!_otpSent) ...[
+              TextField(
+                controller: _nameController,
+                decoration: const InputDecoration(
+                  labelText: '用户名',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.person),
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-
-            // 邮箱输入
+              const SizedBox(height: 16),
+            ],
             TextField(
               controller: _emailController,
+              enabled: !_otpSent,
               decoration: const InputDecoration(
                 labelText: '邮箱地址',
                 border: OutlineInputBorder(),
@@ -208,85 +165,51 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
               keyboardType: TextInputType.emailAddress,
             ),
-            const SizedBox(height: 16),
-
-            // 密码输入
-            TextField(
-              controller: _passwordController,
-              decoration: const InputDecoration(
-                labelText: '密码 (至少6位)',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.lock),
-              ),
-              obscureText: true,
-            ),
-            const SizedBox(height: 16),
-
-            // 确认密码
-            TextField(
-              controller: _confirmPasswordController,
-              decoration: const InputDecoration(
-                labelText: '确认密码',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.lock_outline),
-              ),
-              obscureText: true,
-            ),
-            const SizedBox(height: 24),
-
-            // 发送验证码按钮
-            if (!_codeSent)
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _sendVerificationCode,
-                  child: _isLoading
-                      ? const CircularProgressIndicator()
-                      : const Text('发送验证码'),
+            if (_otpSent) ...[
+              const SizedBox(height: 24),
+              TextField(
+                controller: _otpController,
+                autofocus: true,
+                maxLength: 6,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: '6位邮箱验证码',
+                  hintText: '请输入邮件中的验证码',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.verified_user),
                 ),
-              )
-            else
-              Column(
-                children: [
-                  // 验证码输入
-                  TextField(
-                    controller: _verificationCodeController,
-                    decoration: const InputDecoration(
-                      labelText: '请输入6位验证码',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.verified),
-                    ),
-                    keyboardType: TextInputType.number,
-                    maxLength: 6,
-                  ),
-                  const SizedBox(height: 16),
-
-                  // 完成注册按钮
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton(
-                      onPressed: _isLoading ? null : _completeRegistration,
-                      child: _isLoading
-                          ? const CircularProgressIndicator()
-                          : const Text('完成注册'),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-
-                  // 重新发送验证码
-                  TextButton(
-                    onPressed: _isLoading ? null : _sendVerificationCode,
-                    child: const Text('重新发送验证码'),
-                  ),
-                ],
               ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: _isLoading || _secondsRemaining > 0
+                      ? null
+                      : _sendCode,
+                  child: Text(_secondsRemaining > 0
+                      ? '${_secondsRemaining}秒后可重新发送'
+                      : '重新发送验证码'),
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : (_otpSent ? _verifyCode : _sendCode),
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(_otpSent ? '验证并注册' : '发送验证码'),
+              ),
+            ),
             const SizedBox(height: 16),
             TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(); // 返回登录页
-              },
+              onPressed: () => Navigator.of(context).pop(),
               child: const Text('已有账号？去登录'),
             ),
           ],

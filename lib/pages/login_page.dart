@@ -1,7 +1,10 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'register_page.dart';
-import 'dart:io';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -12,59 +15,105 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
+  final _otpController = TextEditingController();
+  Timer? _countdownTimer;
   bool _isLoading = false;
+  bool _otpSent = false;
+  int _secondsRemaining = 0;
 
-  Future<void> _signIn() async {
-    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
-      _showError('请输入邮箱和密码');
+  Future<void> _sendCode() async {
+    final email = _emailController.text.trim();
+    if (!_isValidEmail(email)) {
+      _showError('请输入有效的邮箱地址');
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
-
+    setState(() => _isLoading = true);
     try {
-      await Supabase.instance.client.auth.signInWithPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
+      await Supabase.instance.client.auth.signInWithOtp(
+        email: email,
+        shouldCreateUser: false,
       );
-
-      if (mounted) {
-        Navigator.of(context).pop(); // 登录成功，返回上一页
-      }
-    } on SocketException catch (_) {
-      // 明确捕获网络错误并给出友好提示
-      _showError('网络无法连接，请检查模拟器或主机网络设置');
+      if (!mounted) return;
+      setState(() => _otpSent = true);
+      _startCountdown();
+      _showSuccess('验证码已发送，请检查邮箱');
+    } on SocketException {
+      _showError('网络无法连接，请检查网络设置');
     } on AuthException catch (e) {
-      // Supabase 出于安全考虑，对所有登录失败都返回相同错误信息
-      if (e.message.contains('Invalid login credentials')) {
-        _showError('邮箱或密码错误，请检查后重试');
-      } else {
-        _showError(e.message);
-      }
+      _showError(e.message);
     } catch (e) {
-      _showError('登录失败: $e');
+      _showError('验证码发送失败: $e');
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
+  Future<void> _verifyCode() async {
+    final code = _otpController.text.trim();
+    if (code.length != 6 || int.tryParse(code) == null) {
+      _showError('请输入邮件中的6位数字验证码');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final response = await Supabase.instance.client.auth.verifyOTP(
+        email: _emailController.text.trim(),
+        token: code,
+        type: OtpType.email,
+      );
+      if (mounted && response.session != null) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    } on AuthException catch (e) {
+      _showError(e.message);
+    } catch (e) {
+      _showError('验证码验证失败: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _startCountdown() {
+    _countdownTimer?.cancel();
+    setState(() => _secondsRemaining = 60);
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_secondsRemaining <= 1) {
+        timer.cancel();
+        setState(() => _secondsRemaining = 0);
+      } else {
+        setState(() => _secondsRemaining--);
+      }
+    });
+  }
+
+  bool _isValidEmail(String email) =>
+      RegExp(r'^[\w.-]+@([\w-]+\.)+[\w-]{2,}$').hasMatch(email);
+
   void _showError(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
   }
 
+  void _showSuccess(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.green),
+    );
+  }
+
   @override
   void dispose() {
+    _countdownTimer?.cancel();
     _emailController.dispose();
-    _passwordController.dispose();
+    _otpController.dispose();
     super.dispose();
   }
 
@@ -73,36 +122,63 @@ class _LoginPageState extends State<LoginPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('登录')),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             TextField(
               controller: _emailController,
+              enabled: !_otpSent,
               decoration: const InputDecoration(
                 labelText: '邮箱',
                 border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.email),
               ),
               keyboardType: TextInputType.emailAddress,
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _passwordController,
-              decoration: const InputDecoration(
-                labelText: '密码',
-                border: OutlineInputBorder(),
+            if (_otpSent) ...[
+              const SizedBox(height: 16),
+              TextField(
+                controller: _otpController,
+                autofocus: true,
+                maxLength: 6,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: '6位邮箱验证码',
+                  hintText: '请输入邮件中的验证码',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.verified_user),
+                ),
               ),
-              obscureText: true,
-            ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: _isLoading || _secondsRemaining > 0
+                      ? null
+                      : _sendCode,
+                  child: Text(
+                    _secondsRemaining > 0
+                        ? '${_secondsRemaining}秒后可重新发送'
+                        : '重新发送验证码',
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
               height: 48,
               child: ElevatedButton(
-                onPressed: _isLoading ? null : _signIn,
+                onPressed: _isLoading
+                    ? null
+                    : (_otpSent ? _verifyCode : _sendCode),
                 child: _isLoading
-                    ? const CircularProgressIndicator()
-                    : const Text('登录'),
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(_otpSent ? '验证并登录' : '发送验证码'),
               ),
             ),
             const SizedBox(height: 16),
@@ -110,7 +186,7 @@ class _LoginPageState extends State<LoginPage> {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const RegisterPage()),
+                  MaterialPageRoute(builder: (_) => const RegisterPage()),
                 );
               },
               child: const Text('没有账号？去注册'),
