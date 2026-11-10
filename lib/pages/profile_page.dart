@@ -5,10 +5,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/base_entity.dart';
 import '../models/user_profile.dart';
 import '../services/entity_service.dart';
+import '../services/moderation_service.dart';
 import 'edit_profile_page.dart';
 import 'login_page.dart';
 import 'post_detail_page.dart';
 import 'register_page.dart';
+import 'admin_center_page.dart';
+import 'notifications_page.dart';
 
 class ProfilePage extends StatefulWidget {
   final String? userId;
@@ -22,17 +25,16 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   final _client = Supabase.instance.client;
   final _entityService = EntityService();
+  final _moderationService = ModerationService();
   UserProfile? _profile;
   List<BaseEntity> _posts = [];
   bool _loading = true;
   String? _error;
 
-  String? get _targetUserId =>
-      widget.userId ?? _client.auth.currentUser?.id;
+  String? get _targetUserId => widget.userId ?? _client.auth.currentUser?.id;
 
   bool get _isOwnProfile =>
-      widget.userId == null ||
-      widget.userId == _client.auth.currentUser?.id;
+      widget.userId == null || widget.userId == _client.auth.currentUser?.id;
 
   @override
   void initState() {
@@ -96,19 +98,74 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+  Future<void> _blockUser() async {
+    final userId = _targetUserId;
+    if (userId == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('拉黑用户？'),
+        content: const Text('拉黑后将不再主动看到该用户的内容。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('拉黑'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await _moderationService.blockUser(userId);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('已拉黑该用户')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('操作失败：$e')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final title = _isOwnProfile ? '我的主页' : '用户主页';
     return Scaffold(
       appBar: AppBar(
         title: Text(title),
-        actions: _isOwnProfile && _client.auth.currentUser != null
+        actions: _client.auth.currentUser != null
             ? [
-                IconButton(
-                  onPressed: _signOut,
-                  tooltip: '退出登录',
-                  icon: const Icon(Icons.logout),
-                ),
+                if (!_isOwnProfile)
+                  IconButton(
+                    onPressed: _blockUser,
+                    tooltip: '拉黑',
+                    icon: const Icon(Icons.block),
+                  ),
+                if (_isOwnProfile)
+                  IconButton(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const NotificationsPage(),
+                      ),
+                    ),
+                    tooltip: '通知',
+                    icon: const Icon(Icons.notifications_none),
+                  ),
+                if (_isOwnProfile)
+                  IconButton(
+                    onPressed: _signOut,
+                    tooltip: '退出登录',
+                    icon: const Icon(Icons.logout),
+                  ),
               ]
             : null,
       ),
@@ -131,6 +188,19 @@ class _ProfilePageState extends State<ProfilePage> {
                       icon: const Icon(Icons.edit),
                       label: const Text('编辑资料'),
                     ),
+                    if (_profile?.role == 'admin') ...[
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const AdminCenterPage(),
+                          ),
+                        ),
+                        icon: const Icon(Icons.shield_outlined),
+                        label: const Text('内容治理中心'),
+                      ),
+                    ],
                   ],
                   const SizedBox(height: 20),
                   Text(
@@ -200,9 +270,11 @@ class _ProfilePageState extends State<ProfilePage> {
                         ),
                       ),
                       const SizedBox(height: 6),
-                      Text(profile?.bio?.trim().isNotEmpty == true
-                          ? profile!.bio!
-                          : '这个人还没有签名'),
+                      Text(
+                        profile?.bio?.trim().isNotEmpty == true
+                            ? profile!.bio!
+                            : '这个人还没有签名',
+                      ),
                     ],
                   ),
                 ),

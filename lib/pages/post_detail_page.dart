@@ -5,6 +5,7 @@ import '../models/base_entity.dart';
 import '../models/comment_model.dart';
 import '../services/entity_service.dart';
 import '../services/comment_service.dart';
+import '../services/moderation_service.dart';
 import '../widgets/post_action_bar.dart';
 import '../widgets/comment_item.dart';
 import '../widgets/comment_input_sheet.dart';
@@ -24,6 +25,7 @@ class PostDetailPage extends StatefulWidget {
 class _PostDetailPageState extends State<PostDetailPage> {
   late final EntityService _entityService;
   late final CommentService _commentService;
+  final _moderationService = ModerationService();
   BaseEntity? _post;
   List<CommentModel> _comments = [];
   Map<String, dynamic>? _userProfile;
@@ -79,6 +81,54 @@ class _PostDetailPageState extends State<PostDetailPage> {
     }
   }
 
+  Future<void> _reportPost() async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('举报帖子'),
+        children: ['广告引流', '色情或暴力', '辱骂骚扰', '虚假内容', '其他']
+            .map(
+              (item) => SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, item),
+                child: Text(item),
+              ),
+            )
+            .toList(),
+      ),
+    );
+    if (reason == null) return;
+    await _submitReport('entity', widget.postId, reason);
+  }
+
+  Future<void> _reportComment(String commentId) async {
+    await _submitReport('comment', commentId, '其他');
+  }
+
+  Future<void> _submitReport(
+    String targetType,
+    String targetId,
+    String reason,
+  ) async {
+    try {
+      await _moderationService.report(
+        targetType: targetType,
+        targetId: targetId,
+        reason: reason,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('举报已提交')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('举报失败：$e')));
+      }
+    }
+  }
+
   Future<Map<String, dynamic>> _getUserProfile(String userId) async {
     try {
       final profile = await Supabase.instance.client
@@ -128,7 +178,17 @@ class _PostDetailPageState extends State<PostDetailPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('帖子详情'), elevation: 0),
+      appBar: AppBar(
+        title: const Text('帖子详情'),
+        elevation: 0,
+        actions: [
+          IconButton(
+            onPressed: _reportPost,
+            tooltip: '举报',
+            icon: const Icon(Icons.flag_outlined),
+          ),
+        ],
+      ),
       body: _isLoadingPost
           ? Center(child: CircularProgressIndicator())
           : _post == null
@@ -206,6 +266,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                               // 可选：更新点赞计数
                             },
                             onAuthorTap: _openUserProfile,
+                            onReportPressed: () => _reportComment(comment.id),
                           );
                         }, childCount: _comments.length),
                       ),

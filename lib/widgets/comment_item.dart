@@ -11,6 +11,7 @@ class CommentItem extends StatefulWidget {
   final Function(CommentModel)? onDeleted; // 删除后的回调
   final VoidCallback? onLikeChanged; // 点赞状态变化回调
   final ValueChanged<String>? onAuthorTap;
+  final VoidCallback? onReportPressed;
 
   const CommentItem({
     Key? key,
@@ -20,6 +21,7 @@ class CommentItem extends StatefulWidget {
     this.onDeleted,
     this.onLikeChanged,
     this.onAuthorTap,
+    this.onReportPressed,
   }) : super(key: key);
 
   @override
@@ -195,10 +197,13 @@ class _CommentItemState extends State<CommentItem> {
               PopupMenuButton(
                 itemBuilder: (context) => [
                   PopupMenuItem(child: Text('删除'), value: 'delete'),
+                  PopupMenuItem(child: Text('举报'), value: 'report'),
                 ],
                 onSelected: (value) {
                   if (value == 'delete') {
                     _deleteComment();
+                  } else if (value == 'report') {
+                    widget.onReportPressed?.call();
                   }
                 },
               ),
@@ -278,6 +283,7 @@ class _CommentItemState extends State<CommentItem> {
                 onDeleted: widget.onDeleted,
                 onLikeChanged: widget.onLikeChanged,
                 onAuthorTap: widget.onAuthorTap,
+                onReportPressed: widget.onReportPressed,
               );
             }).toList(),
           ],
