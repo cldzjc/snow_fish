@@ -33,6 +33,54 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
+  <div id="skneo-turnstile-container"></div>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+  <script>
+    (() => {
+      const siteKey = '0x4AAAAAAF6-Q66h3AkTWr-G';
+      let widgetId;
+      let callback;
+      let executeWhenReady = false;
+
+      window.skneoTurnstileRender = (tokenCallback) => {
+        callback = tokenCallback;
+        const render = () => {
+          if (widgetId !== undefined) return;
+          if (!window.turnstile) {
+            window.setTimeout(render, 100);
+            return;
+          }
+          widgetId = window.turnstile.render('#skneo-turnstile-container', {
+            sitekey: siteKey,
+            size: 'invisible',
+            execution: 'execute',
+            callback: (token) => callback?.(token),
+            'expired-callback': () => callback?.(''),
+            'error-callback': () => callback?.('')
+          });
+          if (executeWhenReady) {
+            executeWhenReady = false;
+            window.turnstile.execute(widgetId);
+          }
+        };
+        render();
+      };
+      window.skneoTurnstileExecute = () => {
+        if (widgetId !== undefined && window.turnstile) {
+          window.turnstile.execute(widgetId);
+        } else {
+          executeWhenReady = true;
+        }
+      };
+      window.skneoTurnstileReset = () => {
+        executeWhenReady = false;
+        if (widgetId !== undefined && window.turnstile) {
+          window.turnstile.reset(widgetId);
+        }
+        callback = undefined;
+      };
+    })();
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

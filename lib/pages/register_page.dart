@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../services/turnstile_service.dart';
+
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
 
@@ -19,6 +21,7 @@ class _RegisterPageState extends State<RegisterPage> {
   bool _isLoading = false;
   bool _otpSent = false;
   int _secondsRemaining = 0;
+  final _turnstileService = TurnstileService();
 
   Future<void> _sendCode() async {
     final email = _emailController.text.trim();
@@ -35,6 +38,14 @@ class _RegisterPageState extends State<RegisterPage> {
 
     setState(() => _isLoading = true);
     try {
+      if (_turnstileService.isSupported) {
+        final turnstileToken = await _turnstileService.getToken();
+        if (turnstileToken == null ||
+            !await _turnstileService.verifyWithSupabase(turnstileToken)) {
+          _showError('人机验证未完成，请重试');
+          return;
+        }
+      }
       await Supabase.instance.client.auth.signInWithOtp(
         email: email,
         shouldCreateUser: true,

@@ -2,12 +2,6 @@
 
 一个面向滑雪人群、以 UGC 内容和 C2C 闲置雪具为核心的 Flutter + Supabase 社区应用。
 
-项目背景、当前功能边界和后续开发默认原则见：
-[docs/PROJECT_CONTEXT.md](docs/PROJECT_CONTEXT.md)
-
-功能与 Supabase 表的对应关系、保留/删除候选见：
-[docs/FUNCTION_DATA_MAPPING.md](docs/FUNCTION_DATA_MAPPING.md)
-
 ## 项目特性
 
 - ✨ **UGC 内容社区**: 支持约滑、约饭、经验分享和其他滑雪相关内容
@@ -77,9 +71,6 @@ lib/
 
 ## 📚 文档
 
-### 核心文档
-- [docs/PROJECT_CONTEXT.md](docs/PROJECT_CONTEXT.md) - 项目背景、现状和开发上下文
-- [docs/FUNCTION_DATA_MAPPING.md](docs/FUNCTION_DATA_MAPPING.md) - 功能、代码与 Supabase 表映射
 - [QUICK_REFERENCE_2024.md](QUICK_REFERENCE_2024.md) - 常用入口和命令速查
 - [DOCUMENTATION_GUIDE.md](DOCUMENTATION_GUIDE.md) - 文档导航
 
