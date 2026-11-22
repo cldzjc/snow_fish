@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 import 'package:flutter/foundation.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../utils/custom_cropper.dart';
+import '../services/profile_sync_service.dart';
 
 // Top-level function for compute to compress images in a background isolate
 Uint8List _compressImageIsolate(Map<String, dynamic> args) {
@@ -40,6 +41,8 @@ class EditProfilePage extends StatefulWidget {
 class _EditProfilePageState extends State<EditProfilePage> {
   final _usernameController = TextEditingController();
   final _introController = TextEditingController();
+  String? _residentRegion;
+  String _residentResort = '暂无固定雪场';
 
   String? _avatarUrl;
   String? _coverUrl;
@@ -83,6 +86,11 @@ class _EditProfilePageState extends State<EditProfilePage> {
           _coverUrl =
               (data['cover_url'] as String?) ??
               (data['background_url'] as String?);
+          _residentRegion = (data['resident_region'] as String?)?.trim();
+          _residentResort =
+              (data['resident_resort'] as String?)?.trim().isNotEmpty == true
+              ? data['resident_resort'] as String
+              : '暂无固定雪场';
         });
       }
     }
@@ -260,6 +268,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
       final updates = <String, dynamic>{
         'nickname': _usernameController.text.trim(),
         'bio': _introController.text.trim(),
+        if (_residentRegion != null && _residentRegion!.isNotEmpty)
+          'resident_region': _residentRegion,
+        'resident_resort': _residentResort,
       };
 
       // avatar
@@ -357,6 +368,11 @@ class _EditProfilePageState extends State<EditProfilePage> {
             .eq('id', user.id);
       }
 
+      final nickname = updates['nickname'] as String?;
+      if (nickname != null && nickname.trim().isNotEmpty) {
+        await ProfileSyncService().updateNickname(nickname);
+      }
+
       debugPrint('💾 已保存到 user_profiles:');
       debugPrint('   user_id: ${user.id}');
       debugPrint('   updates: $updates');
@@ -427,6 +443,64 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 border: OutlineInputBorder(),
                 hintText: '一句话介绍',
               ),
+            ),
+            const SizedBox(height: 16),
+            const Text('常驻地区', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: _residentRegion,
+              decoration: const InputDecoration(border: OutlineInputBorder()),
+              items:
+                  const [
+                        '北京',
+                        '河北',
+                        '吉林',
+                        '辽宁',
+                        '黑龙江',
+                        '内蒙古',
+                        '山东',
+                        '新疆',
+                        '甘肃',
+                        '四川',
+                        '云南',
+                        '陕西',
+                        '山西',
+                        '其他',
+                      ]
+                      .map(
+                        (value) =>
+                            DropdownMenuItem(value: value, child: Text(value)),
+                      )
+                      .toList(),
+              onChanged: (value) => setState(() => _residentRegion = value),
+            ),
+            const SizedBox(height: 16),
+            const Text('常驻雪场', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: _residentResort,
+              decoration: const InputDecoration(border: OutlineInputBorder()),
+              items:
+                  const [
+                        '暂无固定雪场',
+                        '崇礼·富龙',
+                        '崇礼·万龙',
+                        '崇礼·云顶',
+                        '崇礼·太舞',
+                        '河北·崇礼',
+                        '新疆·阿勒泰',
+                        '吉林·北大湖',
+                        '辽宁·抚顺雷锋',
+                        '北京·莲石湖',
+                        '甘肃·平堡',
+                      ]
+                      .map(
+                        (value) =>
+                            DropdownMenuItem(value: value, child: Text(value)),
+                      )
+                      .toList(),
+              onChanged: (value) =>
+                  setState(() => _residentResort = value ?? '暂无固定雪场'),
             ),
             const SizedBox(height: 16),
 

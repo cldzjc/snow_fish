@@ -39,6 +39,128 @@ class EntityService {
     }
   }
 
+  /// 获取 sk社区帖子，置顶内容优先（仅首页第一页包含置顶）
+  Future<List<BaseEntity>> fetchSkCommunity({
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final normal = await _client
+        .from('entities')
+        .select('*, media(*)')
+        .eq('entity_type', 'post')
+        .eq('moderation_status', 'visible')
+        .order('created_at', ascending: false)
+        .range(offset, offset + limit - 1);
+    final normalItems = (normal as List)
+        .map((item) => BaseEntity.fromJson(item as Map<String, dynamic>))
+        .toList();
+
+    if (offset > 0) return normalItems;
+
+    final now = DateTime.now().toUtc().toIso8601String();
+    final pinned = await _client
+        .from('entities')
+        .select('*, media(*)')
+        .eq('entity_type', 'post')
+        .eq('moderation_status', 'visible')
+        .not('pinned_at', 'is', null)
+        .or('pinned_until.is.null,pinned_until.gt.$now')
+        .order('pinned_at', ascending: false)
+        .range(0, 49);
+    final pinnedItems = (pinned as List)
+        .map((item) => BaseEntity.fromJson(item as Map<String, dynamic>))
+        .toList();
+    if (pinnedItems.isEmpty) return normalItems;
+
+    final pinnedIds = pinnedItems.map((item) => item.id).toSet();
+    return [
+      ...pinnedItems,
+      ...normalItems.where((item) => !pinnedIds.contains(item.id)),
+    ];
+  }
+
+  /// 获取约约约活动列表
+  Future<List<BaseEntity>> fetchActivities({
+    String? regionId,
+    String? activityType,
+  }) async {
+    var query = _client
+        .from('entities')
+        .select('*, media(*)')
+        .inFilter('entity_type', [
+          'activity_ski',
+          'activity_photo',
+          'activity_food',
+          'activity_gear',
+        ])
+        .eq('moderation_status', 'visible');
+    if (regionId != null && regionId.isNotEmpty) {
+      query = query.filter('extra_data->>region_id', 'eq', regionId);
+    }
+    if (activityType != null && activityType.isNotEmpty) {
+      query = query.filter('extra_data->>activity_type', 'eq', activityType);
+    }
+    final response = await query.order('created_at', ascending: false);
+    return (response as List)
+        .map((item) => BaseEntity.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// 我发起的活动
+  Future<List<BaseEntity>> fetchMyCreatedActivities() async {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) return [];
+    final response = await _client
+        .from('entities')
+        .select('*, media(*)')
+        .eq('user_id', uid)
+        .inFilter('entity_type', const [
+          'activity_ski',
+          'activity_photo',
+          'activity_food',
+          'activity_gear',
+        ])
+        .order('created_at', ascending: false);
+    return (response as List)
+        .map((item) => BaseEntity.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// 我参与的（已报名）活动
+  Future<List<BaseEntity>> fetchMyJoinedActivities() async {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) return [];
+    final rows = await _client
+        .from('activity_participants')
+        .select('entity_id')
+        .eq('user_id', uid)
+        .eq('status', 'joined');
+    final ids = (rows as List)
+        .map((row) => row['entity_id'] as String?)
+        .whereType<String>()
+        .toList();
+    if (ids.isEmpty) return [];
+    final response = await _client
+        .from('entities')
+        .select('*, media(*)')
+        .inFilter('id', ids)
+        .order('created_at', ascending: false);
+    return (response as List)
+        .map((item) => BaseEntity.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// 判断活动是否已结束（时间已过或状态为 ended）
+  bool isActivityEnded(BaseEntity activity) {
+    final status = activity.extraData['activity_status']?.toString();
+    if (status == 'ended') return true;
+    final startAt = DateTime.tryParse(
+      activity.extraData['start_at']?.toString() ?? '',
+    );
+    if (startAt == null) return false;
+    return startAt.isBefore(DateTime.now());
+  }
+
   /// 获取用户发布的实体
   Future<List<BaseEntity>> fetchUserEntities({
     required String userId,
@@ -568,53 +690,68 @@ class EntityService {
       _handleError(e);
       return false;
     }
-
   }
 
   Future<bool> toggleFavorite(String entityId) async {
-      final currentUser = _client.auth.currentUser;
-      if (currentUser == null) throw Exception('用户未登录');
+    final currentUser = _client.auth.currentUser;
+    if (currentUser == null) throw Exception('用户未登录');
 
-      final existing = await _client
-          .from('interactions')
-          .select('id')
-          .eq('user_id', currentUser.id)
-          .eq('target_type', 'entity')
-          .eq('entity_id', entityId)
-          .eq('interaction_type', 'favorite')
-          .limit(1)
-          .maybeSingle();
+    final existing = await _client
+        .from('interactions')
+        .select('id')
+        .eq('user_id', currentUser.id)
+        .eq('target_type', 'entity')
+        .eq('entity_id', entityId)
+        .eq('interaction_type', 'favorite')
+        .limit(1)
+        .maybeSingle();
 
-      if (existing != null) {
-        await _client.from('interactions').delete().eq('id', existing['id']);
-        return false;
-      }
-
-      await _client.from('interactions').insert({
-        'user_id': currentUser.id,
-        'target_type': 'entity',
-        'entity_id': entityId,
-        'interaction_type': 'favorite',
-        'score': 1,
-        'created_at': DateTime.now().toUtc().toIso8601String(),
-      });
-      return true;
+    if (existing != null) {
+      await _client.from('interactions').delete().eq('id', existing['id']);
+      return false;
     }
 
-  Future<bool> hasFavorite(String entityId) async {
-      final currentUser = _client.auth.currentUser;
-      if (currentUser == null) return false;
+    await _client.from('interactions').insert({
+      'user_id': currentUser.id,
+      'target_type': 'entity',
+      'entity_id': entityId,
+      'interaction_type': 'favorite',
+      'score': 1,
+      'created_at': DateTime.now().toUtc().toIso8601String(),
+    });
+    return true;
+  }
 
-      final existing = await _client
-          .from('interactions')
-          .select('id')
-          .eq('user_id', currentUser.id)
-          .eq('target_type', 'entity')
-          .eq('entity_id', entityId)
-          .eq('interaction_type', 'favorite')
-          .limit(1)
-          .maybeSingle();
-      return existing != null;
+  Future<bool> hasFavorite(String entityId) async {
+    final currentUser = _client.auth.currentUser;
+    if (currentUser == null) return false;
+
+    final existing = await _client
+        .from('interactions')
+        .select('id')
+        .eq('user_id', currentUser.id)
+        .eq('target_type', 'entity')
+        .eq('entity_id', entityId)
+        .eq('interaction_type', 'favorite')
+        .limit(1)
+        .maybeSingle();
+    return existing != null;
+  }
+
+  Future<bool> joinActivity(String entityId) async {
+    final result = await _client.rpc(
+      'join_activity',
+      params: {'p_entity_id': entityId},
+    );
+    return result == true;
+  }
+
+  Future<bool> cancelActivityJoin(String entityId) async {
+    final result = await _client.rpc(
+      'cancel_activity_join',
+      params: {'p_entity_id': entityId},
+    );
+    return result == true;
   }
 
   // ============ 辅助方法 ============

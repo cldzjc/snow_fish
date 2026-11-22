@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/turnstile_service.dart';
+import '../services/profile_sync_service.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -21,6 +22,8 @@ class _RegisterPageState extends State<RegisterPage> {
   bool _isLoading = false;
   bool _otpSent = false;
   int _secondsRemaining = 0;
+  String? _residentRegion;
+  String _residentResort = '暂无固定雪场';
   final _turnstileService = TurnstileService();
 
   Future<void> _sendCode() async {
@@ -29,6 +32,10 @@ class _RegisterPageState extends State<RegisterPage> {
 
     if (name.isEmpty) {
       _showError('请输入用户名');
+      return;
+    }
+    if (_residentRegion == null || _residentRegion!.isEmpty) {
+      _showError('请选择常驻地区');
       return;
     }
     if (!_isValidEmail(email)) {
@@ -49,7 +56,13 @@ class _RegisterPageState extends State<RegisterPage> {
       await Supabase.instance.client.auth.signInWithOtp(
         email: email,
         shouldCreateUser: true,
-        data: {'name': name, 'role': 'user'},
+        data: {
+          'display_name': name,
+          'name': name,
+          'role': 'user',
+          'resident_region': _residentRegion,
+          'resident_resort': _residentResort,
+        },
       );
       if (!mounted) return;
       setState(() => _otpSent = true);
@@ -76,12 +89,19 @@ class _RegisterPageState extends State<RegisterPage> {
 
     setState(() => _isLoading = true);
     try {
-      await Supabase.instance.client.auth.verifyOTP(
+      final response = await Supabase.instance.client.auth.verifyOTP(
         email: email,
         token: code,
         type: OtpType.email,
       );
-      if (mounted) {
+      if (response.session != null) {
+        await ProfileSyncService().ensureCurrentProfile(
+          registrationName: _nameController.text,
+          residentRegion: _residentRegion,
+          residentResort: _residentResort,
+        );
+      }
+      if (mounted && response.session != null) {
         _showSuccess('注册成功');
         Navigator.of(context).popUntil((route) => route.isFirst);
       }
@@ -152,8 +172,10 @@ class _RegisterPageState extends State<RegisterPage> {
               style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            const Text('加入 Snow Fish 滑雪内容社区',
-                style: TextStyle(color: Colors.grey)),
+            const Text(
+              '加入 Snow Fish 滑雪内容社区',
+              style: TextStyle(color: Colors.grey),
+            ),
             const SizedBox(height: 40),
             if (!_otpSent) ...[
               TextField(
@@ -163,6 +185,70 @@ class _RegisterPageState extends State<RegisterPage> {
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.person),
                 ),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _residentRegion,
+                decoration: const InputDecoration(
+                  labelText: '常驻地区（必选）',
+                  border: OutlineInputBorder(),
+                ),
+                items:
+                    const [
+                          '北京',
+                          '河北',
+                          '吉林',
+                          '辽宁',
+                          '黑龙江',
+                          '内蒙古',
+                          '山东',
+                          '新疆',
+                          '甘肃',
+                          '四川',
+                          '云南',
+                          '陕西',
+                          '山西',
+                          '其他',
+                        ]
+                        .map(
+                          (value) => DropdownMenuItem(
+                            value: value,
+                            child: Text(value),
+                          ),
+                        )
+                        .toList(),
+                onChanged: (value) => setState(() => _residentRegion = value),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _residentResort,
+                decoration: const InputDecoration(
+                  labelText: '常驻雪场',
+                  border: OutlineInputBorder(),
+                ),
+                items:
+                    const [
+                          '暂无固定雪场',
+                          '崇礼·富龙',
+                          '崇礼·万龙',
+                          '崇礼·云顶',
+                          '崇礼·太舞',
+                          '河北·崇礼',
+                          '新疆·阿勒泰',
+                          '吉林·北大湖',
+                          '辽宁·抚顺雷锋',
+                          '北京·莲石湖',
+                          '甘肃·平堡',
+                        ]
+                        .map(
+                          (value) => DropdownMenuItem(
+                            value: value,
+                            child: Text(value),
+                          ),
+                        )
+                        .toList(),
+                onChanged: (value) =>
+                    setState(() => _residentResort = value ?? '暂无固定雪场'),
               ),
               const SizedBox(height: 16),
             ],
@@ -197,9 +283,11 @@ class _RegisterPageState extends State<RegisterPage> {
                   onPressed: _isLoading || _secondsRemaining > 0
                       ? null
                       : _sendCode,
-                  child: Text(_secondsRemaining > 0
-                      ? '${_secondsRemaining}秒后可重新发送'
-                      : '重新发送验证码'),
+                  child: Text(
+                    _secondsRemaining > 0
+                        ? '${_secondsRemaining}秒后可重新发送'
+                        : '重新发送验证码',
+                  ),
                 ),
               ),
             ],
@@ -208,7 +296,9 @@ class _RegisterPageState extends State<RegisterPage> {
               width: double.infinity,
               height: 48,
               child: ElevatedButton(
-                onPressed: _isLoading ? null : (_otpSent ? _verifyCode : _sendCode),
+                onPressed: _isLoading
+                    ? null
+                    : (_otpSent ? _verifyCode : _sendCode),
                 child: _isLoading
                     ? const SizedBox(
                         width: 20,

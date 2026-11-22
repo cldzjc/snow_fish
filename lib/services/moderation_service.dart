@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../media_service.dart';
 
 class ModerationService {
   final SupabaseClient _client = Supabase.instance.client;
@@ -11,13 +12,19 @@ class ModerationService {
   }) async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) throw StateError('请先登录');
-    await _client.from('reports').insert({
-      'reporter_id': userId,
-      'target_type': targetType,
-      'target_id': targetId,
-      'reason': reason,
-      'details': details,
-    });
+    try {
+      await _client.rpc(
+        'submit_report',
+        params: {
+          'p_target_type': targetType,
+          'p_target_id': targetId,
+          'p_reason': reason,
+          'p_details': details,
+        },
+      );
+    } on PostgrestException catch (error) {
+      throw StateError(error.message);
+    }
   }
 
   Future<void> blockUser(String userId) async {
@@ -33,46 +40,86 @@ class ModerationService {
   Future<List<Map<String, dynamic>>> loadOpenReports() async {
     final rows = await _client
         .from('reports')
-        .select()
+        .select(
+          'id, reporter_id, target_type, target_id, reason, details, created_at',
+        )
         .inFilter('status', ['open', 'reviewing'])
         .order('created_at', ascending: false);
-    return List<Map<String, dynamic>>.from(rows);
+    final result = <Map<String, dynamic>>[];
+    for (final row in List<Map<String, dynamic>>.from(rows)) {
+      final enriched = Map<String, dynamic>.from(row);
+      if (row['target_type'] == 'entity') {
+        enriched['target'] = await _client
+            .from('entities')
+            .select('id, title, content, user_id, moderation_status, media(*)')
+            .eq('id', row['target_id'])
+            .maybeSingle();
+      } else if (row['target_type'] == 'comment') {
+        enriched['target'] = await _client
+            .from('comments')
+            .select('id, content, user_id, entity_id, moderation_status')
+            .eq('id', row['target_id'])
+            .maybeSingle();
+      } else {
+        enriched['target'] = await _client
+            .from('user_profiles')
+            .select('id, nickname, avatar_url, account_status')
+            .eq('id', row['target_id'])
+            .maybeSingle();
+      }
+      result.add(enriched);
+    }
+    return result;
   }
 
   Future<void> resolveReport({
     required String reportId,
     required String status,
     required String note,
+    String? targetType,
+    String? targetId,
   }) async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) throw StateError('请先登录');
-    await _client.from('reports').update({
-      'status': status,
-      'resolved_by': userId,
-      'resolution_note': note,
-      'resolved_at': DateTime.now().toUtc().toIso8601String(),
-    }).eq('id', reportId);
+    final decision = status == 'resolved' ? 'remove' : 'dismiss';
+    if (decision == 'remove' && targetType == 'entity' && targetId != null) {
+      await MediaService().deleteMediaByEntity(targetId);
+    }
+    await _client.rpc(
+      'moderate_report',
+      params: {'p_report_id': reportId, 'p_decision': decision, 'p_note': note},
+    );
   }
 
-  Future<void> moderateEntity({
-    required String entityId,
-    required String status,
-    required String reason,
+  Future<void> restoreContent({
+    required String targetType,
+    required String targetId,
+    required String note,
   }) async {
-    final userId = _client.auth.currentUser?.id;
-    if (userId == null) throw StateError('请先登录');
-    await _client.from('entities').update({
-      'moderation_status': status,
-      'moderation_reason': reason,
-      'moderated_by': userId,
-      'moderated_at': DateTime.now().toUtc().toIso8601String(),
-    }).eq('id', entityId);
-    await _client.from('moderation_actions').insert({
-      'moderator_id': userId,
-      'action_type': status == 'visible' ? 'restore_content' : 'hide_content',
-      'target_type': 'entity',
-      'target_id': entityId,
-      'reason': reason,
-    });
+    if (_client.auth.currentUser == null) throw StateError('请先登录');
+    await _client.rpc(
+      'restore_moderated_content',
+      params: {
+        'p_target_type': targetType,
+        'p_target_id': targetId,
+        'p_note': note,
+      },
+    );
+  }
+
+  Future<void> setEntityPinned({
+    required String entityId,
+    required bool pinned,
+    DateTime? until,
+  }) async {
+    if (_client.auth.currentUser == null) throw StateError('请先登录');
+    await _client.rpc(
+      'set_entity_pinned',
+      params: {
+        'p_entity_id': entityId,
+        'p_pinned': pinned,
+        'p_until': until?.toUtc().toIso8601String(),
+      },
+    );
   }
 }

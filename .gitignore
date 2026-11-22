@@ -43,3 +43,15 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local tooling caches (not part of the app)
+.wrangler/
+**/.wrangler/
+
+# Design reference (React/Vite) build output
+/skneo_ui_reference/node_modules/
+/skneo_ui_reference/dist/
+/skneo_ui_reference/.vite/
+
+# Generated build reports
+**/build/reports/

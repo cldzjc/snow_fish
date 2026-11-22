@@ -122,7 +122,21 @@ class CommentService {
     }).toList();
   }
 
-  /// 获取完整的评论树（包含所有回复）
+  /// 获取我发表的评论（按时间倒序）
+  Future<List<Map<String, dynamic>>> getMyComments({int limit = 100}) async {
+    final user = _client.auth.currentUser;
+    if (user == null) return [];
+    final rows = await _client
+        .from('comments')
+        .select('id, entity_id, content, created_at')
+        .eq('user_id', user.id)
+        .eq('is_deleted', false)
+        .order('created_at', ascending: false)
+        .limit(limit);
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
+  /// 获取评论树（包含所有回复）
   Future<List<CommentModel>> getCommentTree({required String entityId}) async {
     try {
       // 获取所有顶级评论

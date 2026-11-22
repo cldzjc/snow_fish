@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/turnstile_service.dart';
+import '../services/profile_sync_service.dart';
 import 'register_page.dart';
 
 class LoginPage extends StatefulWidget {
@@ -73,6 +74,9 @@ class _LoginPageState extends State<LoginPage> {
         token: code,
         type: OtpType.email,
       );
+      if (response.session != null) {
+        await ProfileSyncService().ensureCurrentProfile();
+      }
       if (mounted && response.session != null) {
         Navigator.of(context).popUntil((route) => route.isFirst);
       }

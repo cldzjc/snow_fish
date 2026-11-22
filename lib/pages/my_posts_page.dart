@@ -76,6 +76,22 @@ class _MyPostsPageState extends State<MyPostsPage> {
             return const Center(child: CircularProgressIndicator());
           }
 
+          if (snapshot.hasError) {
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('加载失败，请稍后重试'),
+                  const SizedBox(height: 8),
+                  ElevatedButton(
+                    onPressed: () => setState(() => _future = _load()),
+                    child: const Text('重试'),
+                  ),
+                ],
+              ),
+            );
+          }
+
           final data = snapshot.data ?? [];
           if (data.isEmpty) {
             return const Center(child: Text('你还没有发布帖子'));
@@ -124,13 +140,16 @@ class _MyPostsPageState extends State<MyPostsPage> {
                         ),
                       ],
                     ),
-                    onTap: () {
-                      Navigator.push(
+                    onTap: () async {
+                      final changed = await Navigator.push<bool>(
                         context,
                         MaterialPageRoute(
                           builder: (_) => PostDetailPage(postId: item.id),
                         ),
                       );
+                      if (changed == true && mounted) {
+                        setState(() => _future = _load());
+                      }
                     },
                   ),
                 );

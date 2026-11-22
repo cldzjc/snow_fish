@@ -115,7 +115,13 @@ class MediaService {
 
     // 2. 压缩（如果是图片）
     Uint8List bytes;
-    if (mediaType == 'image' && file.path != null) {
+    if (mediaType == 'image' && file.bytes != null) {
+      bytes = await compute(_compressImageBytesIsolate, {
+        'bytes': file.bytes!,
+        'quality': quality,
+        'maxWidth': maxWidth,
+      });
+    } else if (mediaType == 'image' && file.path != null) {
       bytes = await compute(_compressImageIsolate, {
         'path': file.path!,
         'quality': quality,
@@ -131,6 +137,7 @@ class MediaService {
       contentType: mimeType,
       entityType: 'entity', // 使用通用 entity_type
       ownerId: userId,
+      entityId: entityId,
     );
 
     final uploadUrl = uploadInfo['uploadUrl'];
@@ -153,6 +160,7 @@ class MediaService {
       'entity_id': entityId,
       'url': publicUrl,
       'media_type': mediaType,
+      'object_key': uploadInfo['objectKey'],
       'sort_order': 0,
       'created_at': DateTime.now().toUtc().toIso8601String(),
     };
@@ -227,7 +235,10 @@ class MediaService {
   /// 删除媒体记录
   Future<void> deleteMedia(String mediaId) async {
     try {
-      await _client.from('media').delete().eq('id', mediaId);
+      await _client.functions.invoke(
+        'delete-oss-object',
+        body: jsonEncode({'media_id': mediaId}),
+      );
     } catch (e) {
       _handleError(e);
       rethrow;
@@ -237,7 +248,10 @@ class MediaService {
   /// 删除实体的所有媒体
   Future<void> deleteMediaByEntity(String entityId) async {
     try {
-      await _client.from('media').delete().eq('entity_id', entityId);
+      await _client.functions.invoke(
+        'delete-oss-object',
+        body: jsonEncode({'entity_id': entityId}),
+      );
     } catch (e) {
       _handleError(e);
       rethrow;
@@ -261,12 +275,14 @@ class MediaService {
     required String contentType,
     required String entityType,
     required String ownerId,
+    String? entityId,
   }) async {
     final body = jsonEncode({
       'filename': filename,
       'contentType': contentType,
       'entity_type': entityType,
       'owner_id': ownerId,
+      'entity_id': entityId,
     });
 
     try {
@@ -405,5 +421,17 @@ Uint8List _compressImageIsolate(Map<String, dynamic> args) {
   final image = img.decodeImage(bytes);
   if (image == null) return bytes;
   final resized = img.copyResize(image, width: maxWidth);
+  return Uint8List.fromList(img.encodeJpg(resized, quality: quality));
+}
+
+Uint8List _compressImageBytesIsolate(Map<String, dynamic> args) {
+  final bytes = args['bytes'] as Uint8List;
+  final quality = args['quality'] as int;
+  final maxWidth = args['maxWidth'] as int;
+  final image = img.decodeImage(bytes);
+  if (image == null) return bytes;
+  final resized = image.width > maxWidth
+      ? img.copyResize(image, width: maxWidth)
+      : image;
   return Uint8List.fromList(img.encodeJpg(resized, quality: quality));
 }

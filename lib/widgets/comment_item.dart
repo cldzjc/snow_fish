@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/comment_model.dart';
 import '../utils/time_utils.dart';
 import '../services/comment_service.dart';
@@ -10,6 +11,7 @@ class CommentItem extends StatefulWidget {
   final VoidCallback? onReplyPressed; // 回复按钮回调
   final Function(CommentModel)? onDeleted; // 删除后的回调
   final VoidCallback? onLikeChanged; // 点赞状态变化回调
+  final VoidCallback? onChanged; // 评论内容变更后回调（编辑）
   final ValueChanged<String>? onAuthorTap;
   final VoidCallback? onReportPressed;
 
@@ -20,6 +22,7 @@ class CommentItem extends StatefulWidget {
     this.onReplyPressed,
     this.onDeleted,
     this.onLikeChanged,
+    this.onChanged,
     this.onAuthorTap,
     this.onReportPressed,
   }) : super(key: key);
@@ -142,8 +145,54 @@ class _CommentItemState extends State<CommentItem> {
     }
   }
 
+  Future<void> _editComment() async {
+    final controller = TextEditingController(text: widget.comment.content);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('编辑评论'),
+        content: TextField(
+          controller: controller,
+          maxLines: 4,
+          decoration: const InputDecoration(labelText: '评论内容'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    final trimmed = result?.trim();
+    if (trimmed == null || trimmed.isEmpty) return;
+    try {
+      await _commentService.updateComment(
+        commentId: widget.comment.id,
+        content: trimmed,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('评论已更新')));
+      widget.onChanged?.call();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('编辑失败: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isOwn =
+        widget.comment.userId == Supabase.instance.client.auth.currentUser?.id;
     final avatarUrl =
         widget.comment.authorAvatar ??
         'https://api.dicebear.com/7.x/avataaars/svg?seed=${widget.comment.userId}';
@@ -196,11 +245,16 @@ class _CommentItemState extends State<CommentItem> {
               // 更多菜单
               PopupMenuButton(
                 itemBuilder: (context) => [
-                  PopupMenuItem(child: Text('删除'), value: 'delete'),
-                  PopupMenuItem(child: Text('举报'), value: 'report'),
+                  if (isOwn)
+                    const PopupMenuItem(child: Text('编辑'), value: 'edit'),
+                  if (isOwn)
+                    const PopupMenuItem(child: Text('删除'), value: 'delete'),
+                  const PopupMenuItem(child: Text('举报'), value: 'report'),
                 ],
                 onSelected: (value) {
-                  if (value == 'delete') {
+                  if (value == 'edit') {
+                    _editComment();
+                  } else if (value == 'delete') {
                     _deleteComment();
                   } else if (value == 'report') {
                     widget.onReportPressed?.call();
@@ -282,6 +336,7 @@ class _CommentItemState extends State<CommentItem> {
                 onReplyPressed: widget.onReplyPressed,
                 onDeleted: widget.onDeleted,
                 onLikeChanged: widget.onLikeChanged,
+                onChanged: widget.onChanged,
                 onAuthorTap: widget.onAuthorTap,
                 onReportPressed: widget.onReportPressed,
               );

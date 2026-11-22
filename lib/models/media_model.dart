@@ -7,6 +7,7 @@ class MediaModel extends Equatable {
   final String mediaType;
   final int sortOrder;
   final Map<String, dynamic>? metadata;
+  final String? objectKey;
   final DateTime createdAt;
 
   const MediaModel({
@@ -16,6 +17,7 @@ class MediaModel extends Equatable {
     required this.mediaType,
     this.sortOrder = 0,
     this.metadata,
+    this.objectKey,
     required this.createdAt,
   });
 
@@ -28,6 +30,7 @@ class MediaModel extends Equatable {
       mediaType: json['media_type'] ?? 'image',
       sortOrder: json['sort_order'] ?? 0,
       metadata: json['metadata'] as Map<String, dynamic>?,
+      objectKey: json['object_key'] as String?,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'])
           : DateTime.now(),
@@ -43,6 +46,7 @@ class MediaModel extends Equatable {
       'media_type': mediaType,
       'sort_order': sortOrder,
       'metadata': metadata,
+      'object_key': objectKey,
       'created_at': createdAt.toIso8601String(),
     };
   }
@@ -55,6 +59,7 @@ class MediaModel extends Equatable {
     mediaType,
     sortOrder,
     metadata,
+    objectKey,
     createdAt,
   ];
 }

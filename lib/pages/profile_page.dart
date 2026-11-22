@@ -12,6 +12,9 @@ import 'post_detail_page.dart';
 import 'register_page.dart';
 import 'admin_center_page.dart';
 import 'notifications_page.dart';
+import '../services/profile_sync_service.dart';
+import 'my_posts_page.dart';
+import 'my_content_page.dart';
 
 class ProfilePage extends StatefulWidget {
   final String? userId;
@@ -42,6 +45,14 @@ class _ProfilePageState extends State<ProfilePage> {
     _loadProfile();
   }
 
+  @override
+  void didUpdateWidget(covariant ProfilePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userId != widget.userId) {
+      _loadProfile();
+    }
+  }
+
   Future<void> _loadProfile() async {
     final userId = _targetUserId;
     if (userId == null) {
@@ -50,15 +61,24 @@ class _ProfilePageState extends State<ProfilePage> {
     }
 
     try {
-      final profile = await _client
-          .from('user_profiles')
-          .select()
-          .eq('id', userId)
-          .maybeSingle();
-      final posts = await _entityService.fetchUserEntities(
+      if (_isOwnProfile) {
+        await ProfileSyncService().ensureCurrentProfile();
+      }
+
+      final profileFuture = () async {
+        return await _client
+            .from('user_profiles')
+            .select()
+            .eq('id', userId)
+            .maybeSingle();
+      }();
+      final postsFuture = _entityService.fetchUserEntities(
         userId: userId,
         type: 'post',
       );
+      final results = await Future.wait<dynamic>([profileFuture, postsFuture]);
+      final profile = results[0] as Map<String, dynamic>?;
+      final posts = results[1] as List<BaseEntity>;
       if (!mounted) return;
       setState(() {
         _profile = profile == null
@@ -188,6 +208,88 @@ class _ProfilePageState extends State<ProfilePage> {
                       icon: const Icon(Icons.edit),
                       label: const Text('编辑资料'),
                     ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const MyPostsPage(),
+                            ),
+                          ),
+                          child: const Text('我的帖子'),
+                        ),
+                        OutlinedButton(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const MyContentPage(
+                                kind: MyContentKind.comments,
+                              ),
+                            ),
+                          ),
+                          child: const Text('我的评论'),
+                        ),
+                        OutlinedButton(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const MyContentPage(
+                                kind: MyContentKind.favorites,
+                              ),
+                            ),
+                          ),
+                          child: const Text('我的收藏'),
+                        ),
+                        OutlinedButton(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const MyContentPage(
+                                kind: MyContentKind.activities,
+                              ),
+                            ),
+                          ),
+                          child: const Text('我的活动'),
+                        ),
+                        OutlinedButton(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const MyContentPage(
+                                kind: MyContentKind.community,
+                              ),
+                            ),
+                          ),
+                          child: const Text('社区服务'),
+                        ),
+                        OutlinedButton(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const MyContentPage(
+                                kind: MyContentKind.about,
+                              ),
+                            ),
+                          ),
+                          child: const Text('关于 Snow Fish'),
+                        ),
+                        OutlinedButton(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const MyContentPage(
+                                kind: MyContentKind.settings,
+                              ),
+                            ),
+                          ),
+                          child: const Text('设置'),
+                        ),
+                      ],
+                    ),
                     if (_profile?.role == 'admin') ...[
                       const SizedBox(height: 8),
                       OutlinedButton.icon(
@@ -275,6 +377,25 @@ class _ProfilePageState extends State<ProfilePage> {
                             ? profile!.bio!
                             : '这个人还没有签名',
                       ),
+                      if ((profile?.residentRegion?.isNotEmpty == true ||
+                          profile?.residentResort?.isNotEmpty == true &&
+                              profile?.residentResort != '暂无固定雪场'))
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            [
+                              if (profile?.residentRegion?.isNotEmpty == true)
+                                profile!.residentRegion!,
+                              if (profile?.residentResort?.isNotEmpty == true &&
+                                  profile?.residentResort != '暂无固定雪场')
+                                profile!.residentResort!,
+                            ].join(' · '),
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),

@@ -6,6 +6,8 @@ class UserProfile extends Equatable {
   final String? avatarUrl;
   final String? backgroundUrl;
   final String? bio;
+  final String? residentRegion;
+  final String? residentResort;
   final String role;
   final DateTime updatedAt;
 
@@ -15,6 +17,8 @@ class UserProfile extends Equatable {
     this.avatarUrl,
     this.backgroundUrl,
     this.bio,
+    this.residentRegion,
+    this.residentResort,
     this.role = 'user',
     required this.updatedAt,
   });
@@ -27,6 +31,8 @@ class UserProfile extends Equatable {
       avatarUrl: json['avatar_url'],
       backgroundUrl: json['background_url'],
       bio: json['bio'],
+      residentRegion: json['resident_region'],
+      residentResort: json['resident_resort'],
       role:
           (json['role'] as String?) ?? (json['user_role'] as String?) ?? 'user',
       updatedAt: json['updated_at'] != null
@@ -43,6 +49,8 @@ class UserProfile extends Equatable {
       'avatar_url': avatarUrl,
       'background_url': backgroundUrl,
       'bio': bio,
+      'resident_region': residentRegion,
+      'resident_resort': residentResort,
       'role': role,
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -55,6 +63,8 @@ class UserProfile extends Equatable {
     String? avatarUrl,
     String? backgroundUrl,
     String? bio,
+    String? residentRegion,
+    String? residentResort,
     String? role,
     DateTime? updatedAt,
   }) {
@@ -64,6 +74,8 @@ class UserProfile extends Equatable {
       avatarUrl: avatarUrl ?? this.avatarUrl,
       backgroundUrl: backgroundUrl ?? this.backgroundUrl,
       bio: bio ?? this.bio,
+      residentRegion: residentRegion ?? this.residentRegion,
+      residentResort: residentResort ?? this.residentResort,
       role: role ?? this.role,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -76,6 +88,8 @@ class UserProfile extends Equatable {
     avatarUrl,
     backgroundUrl,
     bio,
+    residentRegion,
+    residentResort,
     role,
     updatedAt,
   ];
