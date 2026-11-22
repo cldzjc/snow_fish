@@ -1,180 +1,180 @@
 import 'package:flutter/material.dart';
+
 import '../services/entity_service.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
+import '../theme/app_typography.dart';
+import 'app/app_icons.dart';
 
-/// 帖子操作栏组件 - 显示点赞爱心
+/// 详情页操作栏：点赞与收藏。
+///
+/// 只负责这一个实体的状态，不缓存他人数据。
 class PostActionBar extends StatefulWidget {
-  final String postId;
-  final String userId;
-  final Function(bool isLiked)? onLikeChanged;
+  const PostActionBar({super.key, required this.postId, this.onLikeChanged});
 
-  const PostActionBar({
-    Key? key,
-    required this.postId,
-    required this.userId,
-    this.onLikeChanged,
-  }) : super(key: key);
+  final String postId;
+  final ValueChanged<bool>? onLikeChanged;
 
   @override
   State<PostActionBar> createState() => _PostActionBarState();
 }
 
 class _PostActionBarState extends State<PostActionBar> {
-  late final EntityService _entityService;
+  final EntityService _entityService = EntityService();
+
   int _likeCount = 0;
-  bool _isLiked = false;
-  bool _isFavorite = false;
-  bool _isLoading = true;
+  bool _liked = false;
+  bool _favorite = false;
+  bool _loading = true;
+  bool _busy = false;
 
   @override
   void initState() {
     super.initState();
-    _entityService = EntityService();
-    _loadStats();
+    _load();
   }
 
-  Future<void> _loadStats() async {
+  Future<void> _load() async {
     try {
-      // 获取点赞统计
       final stats = await _entityService.getVoteStats(widget.postId);
-      final hasLiked = await _entityService.hasVoted(
+      final liked = await _entityService.hasVoted(
         entityId: widget.postId,
         score: 5,
       );
-      final isFavorite = await _entityService.hasFavorite(widget.postId);
-
-      if (mounted) {
-        setState(() {
-          _likeCount = stats['like_count'] ?? 0;
-          _isLiked = hasLiked;
-          _isFavorite = isFavorite;
-          _isLoading = false;
-        });
-      }
+      final favorite = await _entityService.hasFavorite(widget.postId);
+      if (!mounted) return;
+      setState(() {
+        _likeCount = stats['like_count'] ?? 0;
+        _liked = liked;
+        _favorite = favorite;
+        _loading = false;
+      });
     } catch (e) {
-      debugPrint('❌ 加载统计数据失败: $e');
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
-  Future<void> _toggleFavorite() async {
-    if (_isLoading) return;
-    final previous = _isFavorite;
-    setState(() => _isFavorite = !_isFavorite);
-    try {
-      final result = await _entityService.toggleFavorite(widget.postId);
-      if (mounted) setState(() => _isFavorite = result);
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isFavorite = previous);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('收藏失败: $e')));
-      }
+      debugPrint('加载互动状态失败: $e');
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   Future<void> _toggleLike() async {
+    if (_busy || _loading) return;
+    setState(() {
+      _busy = true;
+      _liked = !_liked;
+      _likeCount = _liked
+          ? _likeCount + 1
+          : (_likeCount > 0 ? _likeCount - 1 : 0);
+    });
     try {
-      setState(() => _isLiked = !_isLiked);
-
-      // 调用 EntityService 的 toggleVote 方法
-      final result = await _entityService.toggleVote(
-        entityId: widget.postId,
-        score: 5,
-      );
-
-      if (result) {
-        // 更新点赞数
-        if (_isLiked) {
-          _likeCount++;
-        } else {
-          _likeCount = (_likeCount - 1).clamp(0, double.infinity).toInt();
-        }
-
-        if (mounted) {
-          setState(() {});
-        }
-
-        // 回调通知父组件
-        widget.onLikeChanged?.call(_isLiked);
-      } else {
-        // 操作失败，恢复状态
-        setState(() => _isLiked = !_isLiked);
-      }
+      await _entityService.toggleVote(entityId: widget.postId, score: 5);
+      widget.onLikeChanged?.call(_liked);
     } catch (e) {
-      print('❌ 点赞操作失败: $e');
-      // 恢复状态
-      setState(() => _isLiked = !_isLiked);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('点赞失败: $e'), duration: Duration(seconds: 2)),
-        );
-      }
+      if (!mounted) return;
+      setState(() {
+        _liked = !_liked;
+        _likeCount = _liked
+            ? _likeCount + 1
+            : (_likeCount > 0 ? _likeCount - 1 : 0);
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('点赞失败：$e')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_busy || _loading) return;
+    setState(() {
+      _busy = true;
+      _favorite = !_favorite;
+    });
+    try {
+      final result = await _entityService.toggleFavorite(widget.postId);
+      if (!mounted) return;
+      setState(() => _favorite = result);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _favorite = !_favorite);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('收藏失败：$e')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return Padding(
-        padding: EdgeInsets.symmetric(vertical: 12),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.start,
-          children: [SizedBox(height: 32)],
-        ),
-      );
+    if (_loading) {
+      return const SizedBox(height: 48);
     }
+    return Row(
+      children: [
+        _Pill(
+          icon: _liked ? AppIcons.heartFilled : AppIcons.heart,
+          label: _likeCount > 0 ? '$_likeCount' : '点赞',
+          active: _liked,
+          activeColor: context.colors.danger,
+          semanticLabel: _liked ? '取消点赞' : '点赞',
+          onTap: _toggleLike,
+        ),
+        const SizedBox(width: AppSpace.xl),
+        _Pill(
+          icon: _favorite ? AppIcons.bookmarkFilled : AppIcons.bookmark,
+          label: _favorite ? '已收藏' : '收藏',
+          active: _favorite,
+          activeColor: context.colors.ink,
+          semanticLabel: _favorite ? '取消收藏' : '收藏',
+          onTap: _toggleFavorite,
+        ),
+      ],
+    );
+  }
+}
 
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: _toggleLike,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 爱心图标
-                Icon(
-                  _isLiked ? Icons.favorite : Icons.favorite_border,
-                  size: 20,
-                  color: _isLiked ? Colors.red[400] : Colors.grey[600],
-                ),
-                SizedBox(width: 6),
-                // 点赞数
-                Text(
-                  _likeCount > 0 ? _likeCount.toString() : '',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
+class _Pill extends StatelessWidget {
+  const _Pill({
+    required this.icon,
+    required this.label,
+    required this.active,
+    required this.activeColor,
+    required this.semanticLabel,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool active;
+  final Color activeColor;
+  final String semanticLabel;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final color = active ? activeColor : colors.muted;
+    return Semantics(
+      button: true,
+      selected: active,
+      label: semanticLabel,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpace.xs,
+            vertical: AppSpace.sm,
           ),
-          const SizedBox(width: 20),
-          GestureDetector(
-            onTap: _toggleFavorite,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  _isFavorite ? Icons.bookmark : Icons.bookmark_border,
-                  size: 20,
-                  color: _isFavorite ? Colors.amber[700] : Colors.grey[600],
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  _isFavorite ? '已收藏' : '收藏',
-                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
-                ),
-              ],
-            ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 20, color: color),
+              const SizedBox(width: 6),
+              Text(label, style: AppText.bodySmall.copyWith(color: color)),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

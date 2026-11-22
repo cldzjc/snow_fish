@@ -34,9 +34,7 @@ class CommentService {
 
       final nickname =
           (userProfile?['nickname'] as String?) ?? currentUser.email ?? '匿名用户';
-      final avatarUrl =
-          (userProfile?['avatar_url'] as String?) ??
-          'https://api.dicebear.com/7.x/avataaars/svg?seed=${currentUser.id}';
+      final avatarUrl = (userProfile?['avatar_url'] as String?)?.trim() ?? '';
 
       // 插入评论
       final response = await _client

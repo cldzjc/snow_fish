@@ -2,14 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../theme/app_spacing.dart';
+import '../widgets/app/app_bottom_nav.dart';
+import 'activity_list_widget.dart';
 import 'home_page.dart';
-import 'profile_page.dart';
+import 'login_page.dart';
 import 'message_placeholder_page.dart';
 import 'notifications_page.dart';
-import 'publish_hub_page.dart';
-import 'login_page.dart';
 import 'posts_list_widget.dart';
-import 'activity_list_widget.dart';
+import 'profile_page.dart';
+import 'publish_hub_page.dart';
 
 class HomeTabs extends StatefulWidget {
   const HomeTabs({super.key});
@@ -19,19 +22,21 @@ class HomeTabs extends StatefulWidget {
 }
 
 class _HomeTabsState extends State<HomeTabs> {
-  int _currentIndex = 0;
+  /// IndexedStack 下标：0 首页 / 1 私信 / 2 通知 / 3 我的。
+  /// 「发布」不占栈位，是动作。
+  int _stackIndex = 0;
   late final StreamSubscription<AuthState> _authSubscription;
+
+  /// 栈下标 → 底部导航槽位。
+  static const List<int> _navSlots = <int>[0, 1, 3, 4];
 
   @override
   void initState() {
     super.initState();
-
     _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((
-      event,
+      _,
     ) {
-      if (mounted) {
-        setState(() {});
-      }
+      if (mounted) setState(() {});
     });
   }
 
@@ -41,13 +46,13 @@ class _HomeTabsState extends State<HomeTabs> {
     super.dispose();
   }
 
-  Future<void> _openPublish(BuildContext context) async {
+  Future<void> _openPublish() async {
     if (Supabase.instance.client.auth.currentSession == null) {
       await Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const LoginPage()),
       );
-      if (!context.mounted) return;
+      if (!mounted) return;
       if (Supabase.instance.client.auth.currentSession == null) {
         ScaffoldMessenger.of(
           context,
@@ -55,7 +60,7 @@ class _HomeTabsState extends State<HomeTabs> {
         return;
       }
     }
-    if (!context.mounted) return;
+    if (!mounted) return;
     final published = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
@@ -69,86 +74,41 @@ class _HomeTabsState extends State<HomeTabs> {
     }
   }
 
+  void _onSelect(int slot) {
+    if (slot == 2) {
+      _openPublish();
+      return;
+    }
+    final next = _navSlots.indexOf(slot);
+    if (next < 0 || next == _stackIndex) return;
+    setState(() => _stackIndex = next);
+  }
+
   @override
   Widget build(BuildContext context) {
     final userId = Supabase.instance.client.auth.currentUser?.id;
     final pages = <Widget>[
       const HomePage(),
       const MessagePlaceholderPage(),
-      const SizedBox.shrink(),
-      NotificationsPage(key: ValueKey(userId ?? 'logged-out')),
-      ProfilePage(key: ValueKey(userId ?? 'logged-out'), userId: userId),
+      NotificationsPage(key: ValueKey('notif-${userId ?? 'guest'}')),
+      ProfilePage(key: ValueKey('me-${userId ?? 'guest'}'), userId: userId),
     ];
 
-    if (_currentIndex >= pages.length) {
-      _currentIndex = 0;
-    }
-
     return Scaffold(
-      body: IndexedStack(index: _currentIndex, children: pages),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: Colors.blue,
-        unselectedItemColor: Colors.grey,
-        onTap: (index) {
-          if (index == 2) {
-            _openPublish(context);
-            return;
-          }
-          setState(() {
-            _currentIndex = index;
-          });
-        },
-        items: [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: "首页"),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.chat_bubble_outline),
-            label: "私信",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.add_circle_outline),
-            label: "发布",
-          ),
-          BottomNavigationBarItem(
-            icon: ValueListenableBuilder<int>(
-              valueListenable: notificationUnreadCount,
-              builder: (_, count, __) => Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  const Icon(Icons.notifications_none),
-                  if (count > 0)
-                    Positioned(
-                      right: -8,
-                      top: -4,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
-                          vertical: 1,
-                        ),
-                        decoration: const BoxDecoration(
-                          color: Colors.red,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Text(
-                          count > 99 ? '99+' : '$count',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+      body: IndexedStack(index: _stackIndex, children: pages),
+      bottomNavigationBar: ValueListenableBuilder<int>(
+        valueListenable: notificationUnreadCount,
+        builder: (context, unread, _) => SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: AppSpace.xs),
+            child: AppBottomNav(
+              selected: _navSlots[_stackIndex],
+              onSelect: _onSelect,
+              unread: unread,
             ),
-            label: "通知",
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            label: "我的",
-          ),
-        ],
+        ),
       ),
     );
   }

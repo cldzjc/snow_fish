@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
-import 'posts_list_widget.dart';
-import 'login_page.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'publish_hub_page.dart';
-import 'activity_list_widget.dart';
 
-/// 首页当前是否停留在「约约约」Tab，供底部发布入口判断默认发布类型。
+import '../theme/app_colors.dart';
+import '../theme/app_typography.dart';
+import '../widgets/app/app_tabs.dart';
+import 'activity_list_widget.dart';
+import 'posts_list_widget.dart';
+
+/// 首页当前是否停留在「约约约」，供底部发布入口判断默认发布类型。
 final ValueNotifier<bool> homeActivityTabActive = ValueNotifier<bool>(false);
 
 class HomePage extends StatefulWidget {
@@ -15,79 +16,55 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabController;
+class _HomePageState extends State<HomePage> {
+  static const List<String> _tabs = <String>['sk社区', '约约约'];
+
+  int _index = 0;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    _tabController.addListener(_syncActiveTab);
-  }
-
-  void _syncActiveTab() {
-    homeActivityTabActive.value = _tabController.index == 1;
+    homeActivityTabActive.value = _index == 1;
   }
 
   @override
   void dispose() {
-    _tabController.removeListener(_syncActiveTab);
     homeActivityTabActive.value = false;
-    _tabController.dispose();
     super.dispose();
+  }
+
+  void _select(int index) {
+    if (index == _index) return;
+    setState(() => _index = index);
+    homeActivityTabActive.value = index == 1;
   }
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          '雪鱼社区',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        centerTitle: true,
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'sk社区'),
-            Tab(text: '约约约'),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            SizedBox(
+              height: 56,
+              child: Center(
+                child: Text(
+                  'skneo.',
+                  style: AppText.brand.copyWith(color: colors.ink),
+                ),
+              ),
+            ),
+            AppTabs(tabs: _tabs, index: _index, onChanged: _select),
+            Expanded(
+              child: IndexedStack(
+                index: _index,
+                children: const [PostsListWidget(), ActivityListWidget()],
+              ),
+            ),
           ],
         ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: const [PostsListWidget(), ActivityListWidget()],
-      ),
-      floatingActionButton: FloatingActionButton(
-        tooltip: '发布动态',
-        onPressed: () async {
-          if (Supabase.instance.client.auth.currentSession == null) {
-            await Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const LoginPage()),
-            );
-            if (!context.mounted ||
-                Supabase.instance.client.auth.currentSession == null) {
-              return;
-            }
-          }
-          final published = await Navigator.push<bool>(
-            context,
-            MaterialPageRoute(
-              builder: (_) =>
-                  PublishHubPage(defaultActivity: _tabController.index == 1),
-            ),
-          );
-          if (published == true && context.mounted) {
-            feedRefreshTick.value++;
-            activityRefreshTick.value++;
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(const SnackBar(content: Text('动态发布成功')));
-          }
-        },
-        child: const Icon(Icons.edit),
       ),
     );
   }

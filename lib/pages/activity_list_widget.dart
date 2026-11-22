@@ -1,10 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../models/base_entity.dart';
 import '../services/entity_service.dart';
+import '../constants/geo.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
+import '../theme/app_typography.dart';
+import '../widgets/app/app_field.dart';
+import '../widgets/app/app_icons.dart';
+import '../widgets/app/app_state_views.dart';
+import '../widgets/app/status_chip.dart';
 import 'post_detail_page.dart';
 
-/// 活动发布成功后通知约约约列表刷新。
+/// 活动发布后触发列表刷新。
 final ValueNotifier<int> activityRefreshTick = ValueNotifier<int>(0);
 
 class ActivityListWidget extends StatefulWidget {
@@ -16,10 +25,26 @@ class ActivityListWidget extends StatefulWidget {
 
 class _ActivityListWidgetState extends State<ActivityListWidget>
     with AutomaticKeepAliveClientMixin {
+  static final List<AppOption<String>> _regionOptions = <AppOption<String>>[
+    const AppOption<String>('', '全部地区'),
+    for (final region in GeoData.provinces) AppOption<String>(region, region),
+  ];
+
+  static const List<AppOption<String>> _typeOptions = <AppOption<String>>[
+    AppOption<String>('', '全部类型'),
+    AppOption<String>('ski', '约滑'),
+    AppOption<String>('photo', '约拍'),
+    AppOption<String>('food', '约饭'),
+    AppOption<String>('gear', '约装备'),
+  ];
+
   final EntityService _entityService = EntityService();
-  late Future<List<BaseEntity>> _future;
+
   String _region = '';
-  String _activityType = '';
+  String _type = '';
+  bool _loading = true;
+  String? _error;
+  List<BaseEntity> _items = <BaseEntity>[];
 
   @override
   bool get wantKeepAlive => true;
@@ -28,7 +53,7 @@ class _ActivityListWidgetState extends State<ActivityListWidget>
   void initState() {
     super.initState();
     activityRefreshTick.addListener(_onExternalRefresh);
-    _load();
+    _load(initial: true);
   }
 
   @override
@@ -38,26 +63,49 @@ class _ActivityListWidgetState extends State<ActivityListWidget>
   }
 
   void _onExternalRefresh() {
-    if (!mounted) return;
-    _load();
+    if (mounted) _load();
   }
 
-  Future<void> _load() async {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user != null && _region.isEmpty) {
-      final profile = await Supabase.instance.client
-          .from('user_profiles')
-          .select('resident_region')
-          .eq('id', user.id)
-          .maybeSingle();
-      _region = (profile?['resident_region'] as String?)?.trim() ?? '';
+  Future<void> _load({bool initial = false}) async {
+    if (initial) {
+      // 首次进入时把常驻地区作为默认浏览地区，没有则看全部。
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user != null) {
+        try {
+          final row = await Supabase.instance.client
+              .from('user_profiles')
+              .select('resident_region')
+              .eq('id', user.id)
+              .maybeSingle();
+          final region = (row?['resident_region'] as String?)?.trim() ?? '';
+          if (GeoData.provinces.contains(region)) _region = region;
+        } catch (_) {
+          // 读取失败时保持「全部地区」。
+        }
+      }
     }
+    if (!mounted) return;
     setState(() {
-      _future = _entityService.fetchActivities(
-        regionId: _region.isEmpty ? null : _region,
-        activityType: _activityType.isEmpty ? null : _activityType,
-      );
+      _loading = true;
+      _error = null;
     });
+    try {
+      final items = await _entityService.fetchActivities(
+        regionId: _region.isEmpty ? null : _region,
+        activityType: _type.isEmpty ? null : _type,
+      );
+      if (!mounted) return;
+      setState(() {
+        _items = items;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
   }
 
   @override
@@ -66,106 +114,138 @@ class _ActivityListWidgetState extends State<ActivityListWidget>
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(
+            AppSpace.lg,
+            AppSpace.md,
+            AppSpace.lg,
+            AppSpace.md,
+          ),
           child: Row(
             children: [
               Expanded(
-                child: DropdownButtonFormField<String>(
-                  value: _region.isEmpty ? null : _region,
-                  decoration: const InputDecoration(labelText: '浏览地区'),
-                  items: const [
-                    DropdownMenuItem(value: '北京', child: Text('北京')),
-                    DropdownMenuItem(value: '河北', child: Text('河北')),
-                    DropdownMenuItem(value: '黑龙江', child: Text('黑龙江')),
-                    DropdownMenuItem(value: '吉林', child: Text('吉林')),
-                    DropdownMenuItem(value: '辽宁', child: Text('辽宁')),
-                  ],
+                child: AppDropdown<String>(
+                  options: _regionOptions,
+                  value: _region,
                   onChanged: (value) {
-                    setState(() {
-                      _region = value ?? '';
-                      _future = _entityService.fetchActivities(
-                        regionId: _region.isEmpty ? null : _region,
-                        activityType: _activityType.isEmpty
-                            ? null
-                            : _activityType,
-                      );
-                    });
+                    setState(() => _region = value ?? '');
+                    _load();
                   },
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppSpace.md),
               Expanded(
-                child: DropdownButtonFormField<String>(
-                  value: _activityType.isEmpty ? null : _activityType,
-                  decoration: const InputDecoration(labelText: '活动类型'),
-                  items: const [
-                    DropdownMenuItem(value: 'ski', child: Text('约滑')),
-                    DropdownMenuItem(value: 'photo', child: Text('约拍')),
-                    DropdownMenuItem(value: 'food', child: Text('约饭')),
-                    DropdownMenuItem(value: 'gear', child: Text('约装备')),
-                  ],
+                child: AppDropdown<String>(
+                  options: _typeOptions,
+                  value: _type,
                   onChanged: (value) {
-                    setState(() {
-                      _activityType = value ?? '';
-                      _future = _entityService.fetchActivities(
-                        regionId: _region.isEmpty ? null : _region,
-                        activityType: _activityType.isEmpty
-                            ? null
-                            : _activityType,
-                      );
-                    });
+                    setState(() => _type = value ?? '');
+                    _load();
                   },
                 ),
               ),
             ],
           ),
         ),
-        Expanded(
-          child: FutureBuilder<List<BaseEntity>>(
-            future: _future,
-            builder: (_, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (snapshot.hasError) {
-                return const Center(child: Text('活动加载失败，请稍后重试'));
-              }
-              final items = snapshot.data ?? [];
-              if (items.isEmpty) {
-                return const Center(child: Text('暂无约约约活动'));
-              }
-              return RefreshIndicator(
-                onRefresh: _load,
-                child: ListView.builder(
-                  itemCount: items.length,
-                  itemBuilder: (_, index) {
-                    final item = items[index];
-                    final status =
-                        item.extraData['activity_status']?.toString() ??
-                        'recruiting';
-                    return Card(
-                      margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-                      child: ListTile(
-                        title: Text(item.title),
-                        subtitle: Text(
-                          '${item.extraData['region_id'] ?? ''} · ${status == 'recruiting' ? '招募中' : status}',
-                          maxLines: 2,
-                        ),
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => PostDetailPage(postId: item.id),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              );
-            },
+        Expanded(child: _buildBody()),
+      ],
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading) return const AppLoadingSkeleton(rows: 2);
+    if (_error != null) {
+      return AppStateView.error(onRetry: _load);
+    }
+    if (_items.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _load,
+        child: const AppStateView(
+          icon: AppIcons.mountain,
+          title: '还没有活动',
+          description: '换个地区，或者发起一次新的相约。',
+        ),
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.zero,
+        itemCount: _items.length,
+        separatorBuilder: (_, __) => const SizedBox.shrink(),
+        itemBuilder: (_, index) => _ActivityRow(
+          activity: _items[index],
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PostDetailPage(postId: _items[index].id),
+            ),
           ),
         ),
-      ],
+      ),
+    );
+  }
+}
+
+class _ActivityRow extends StatelessWidget {
+  const _ActivityRow({required this.activity, required this.onTap});
+
+  final BaseEntity activity;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final region = activity.extraData['region_id']?.toString().trim() ?? '';
+    final resort = activity.extraData['resort_id']?.toString().trim() ?? '';
+    final place = [region, resort].where((item) => item.isNotEmpty).join(' · ');
+
+    return Semantics(
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: colors.line)),
+          ),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpace.xl,
+            vertical: AppSpace.xl,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    activityIcon(activity.entityType),
+                    size: 18,
+                    color: colors.muted,
+                  ),
+                  const SizedBox(width: AppSpace.sm),
+                  Expanded(
+                    child: Text(
+                      activity.title,
+                      style: AppText.title.copyWith(color: colors.ink),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpace.sm),
+                  ActivityStatusChip(
+                    status:
+                        activity.extraData['activity_status']?.toString() ??
+                        'recruiting',
+                  ),
+                ],
+              ),
+              if (place.isNotEmpty) ...[
+                const SizedBox(height: AppSpace.md),
+                Text(place, style: AppText.meta.copyWith(color: colors.muted)),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

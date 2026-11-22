@@ -1,180 +1,150 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../models/comment_model.dart';
-import '../utils/time_utils.dart';
 import '../services/comment_service.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
+import '../theme/app_typography.dart';
+import '../utils/time_utils.dart';
+import 'app/app_avatar.dart';
+import 'app/app_icons.dart';
+import 'app/app_sheet.dart';
 
-/// 单条评论组件 - 显示评论内容、作者信息、点赞等
+/// 单条评论。回复以一层缩进展示。
 class CommentItem extends StatefulWidget {
-  final CommentModel comment;
-  final bool isReply; // 是否是回复（控制缩进）
-  final VoidCallback? onReplyPressed; // 回复按钮回调
-  final Function(CommentModel)? onDeleted; // 删除后的回调
-  final VoidCallback? onLikeChanged; // 点赞状态变化回调
-  final VoidCallback? onChanged; // 评论内容变更后回调（编辑）
-  final ValueChanged<String>? onAuthorTap;
-  final VoidCallback? onReportPressed;
-
   const CommentItem({
-    Key? key,
+    super.key,
     required this.comment,
     this.isReply = false,
     this.onReplyPressed,
     this.onDeleted,
-    this.onLikeChanged,
     this.onChanged,
     this.onAuthorTap,
     this.onReportPressed,
-  }) : super(key: key);
+  });
+
+  final CommentModel comment;
+  final bool isReply;
+  final VoidCallback? onReplyPressed;
+  final ValueChanged<CommentModel>? onDeleted;
+  final VoidCallback? onChanged;
+  final ValueChanged<String>? onAuthorTap;
+  final VoidCallback? onReportPressed;
 
   @override
   State<CommentItem> createState() => _CommentItemState();
 }
 
 class _CommentItemState extends State<CommentItem> {
-  late final CommentService _commentService;
-  late bool _isLiked;
-  late int _likeCount;
-  bool _isLoading = false;
+  final CommentService _commentService = CommentService();
 
-  @override
-  void initState() {
-    super.initState();
-    _commentService = CommentService();
-    _isLiked = widget.comment.userLiked;
-    _likeCount = widget.comment.likeCount;
-    _loadLikeStatus();
-  }
+  late bool _liked = widget.comment.userLiked;
+  late int _likeCount = widget.comment.likeCount;
+  bool _busy = false;
 
-  Future<void> _loadLikeStatus() async {
-    try {
-      final liked = await _commentService.hasCommentLiked(
-        commentId: widget.comment.id,
-      );
-      if (mounted) {
-        setState(() => _isLiked = liked);
-      }
-    } catch (e) {
-      debugPrint('❌ 加载点赞状态失败: $e');
-    }
-  }
+  bool get _isOwn =>
+      widget.comment.userId == Supabase.instance.client.auth.currentUser?.id;
 
   Future<void> _toggleLike() async {
-    if (_isLoading) return;
-
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _liked = !_liked;
+      _likeCount = _liked
+          ? _likeCount + 1
+          : (_likeCount > 0 ? _likeCount - 1 : 0);
+    });
     try {
-      setState(() {
-        _isLoading = true;
-        _isLiked = !_isLiked;
-        _likeCount += _isLiked ? 1 : -1;
-      });
-
       final result = await _commentService.toggleCommentLike(
         commentId: widget.comment.id,
       );
-
-      if (!result && _isLiked) {
-        // 取消点赞失败，恢复状态
-        setState(() {
-          _isLiked = false;
-          _likeCount--;
-        });
-      }
-
-      widget.onLikeChanged?.call();
-    } catch (e) {
-      debugPrint('❌ 点赞操作失败: $e');
-      // 恢复状态
+      if (!mounted) return;
       setState(() {
-        _isLiked = !_isLiked;
-        _likeCount += _isLiked ? 1 : -1;
+        _liked = result;
       });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('点赞失败: $e'), duration: Duration(seconds: 2)),
-        );
-      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _liked = !_liked;
+        _likeCount = _liked
+            ? _likeCount + 1
+            : (_likeCount > 0 ? _likeCount - 1 : 0);
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('点赞失败：$e')));
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _deleteComment() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('删除评论'),
-        content: Text('确定要删除此评论吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text('删除', style: TextStyle(color: Colors.red)),
+  Future<void> _openMenu() async {
+    await showAppSheet<void>(
+      context,
+      title: '评论操作',
+      builder: (sheetContext) => Column(
+        children: [
+          if (_isOwn)
+            _MenuRow(
+              label: '编辑',
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _edit();
+              },
+            ),
+          if (_isOwn)
+            _MenuRow(
+              label: '删除',
+              danger: true,
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _delete();
+              },
+            ),
+          _MenuRow(
+            label: '举报',
+            onTap: () {
+              Navigator.pop(sheetContext);
+              widget.onReportPressed?.call();
+            },
           ),
         ],
       ),
     );
-
-    if (confirmed != true) return;
-
-    try {
-      setState(() => _isLoading = true);
-      await _commentService.deleteComment(commentId: widget.comment.id);
-
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('评论已删除')));
-        widget.onDeleted?.call(widget.comment);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('删除失败: $e'), duration: Duration(seconds: 2)),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
   }
 
-  Future<void> _editComment() async {
+  Future<void> _edit() async {
     final controller = TextEditingController(text: widget.comment.content);
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('编辑评论'),
-        content: TextField(
-          controller: controller,
-          maxLines: 4,
-          decoration: const InputDecoration(labelText: '评论内容'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
+    final result = await showAppSheet<String>(
+      context,
+      title: '编辑评论',
+      builder: (sheetContext) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: controller,
+            minLines: 3,
+            maxLines: 6,
+            autofocus: true,
+            style: AppText.body.copyWith(color: sheetContext.colors.ink),
+            decoration: const InputDecoration(hintText: '写下你的想法…'),
           ),
+          const SizedBox(height: AppSpace.xl),
           FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('保存'),
+            onPressed: () =>
+                Navigator.pop(sheetContext, controller.text.trim()),
+            child: const Text('保存修改'),
           ),
         ],
       ),
     );
     controller.dispose();
-    final trimmed = result?.trim();
-    if (trimmed == null || trimmed.isEmpty) return;
+    if (result == null || result.isEmpty) return;
     try {
       await _commentService.updateComment(
         commentId: widget.comment.id,
-        content: trimmed,
+        content: result,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -185,164 +155,253 @@ class _CommentItemState extends State<CommentItem> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('编辑失败: $e')));
+      ).showSnackBar(SnackBar(content: Text('编辑失败：$e')));
+    }
+  }
+
+  Future<void> _delete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除评论'),
+        content: const Text('删除后不可恢复，确定继续吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await _commentService.deleteComment(commentId: widget.comment.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('评论已删除')));
+      widget.onDeleted?.call(widget.comment);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('删除失败：$e')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isOwn =
-        widget.comment.userId == Supabase.instance.client.auth.currentUser?.id;
-    final avatarUrl =
-        widget.comment.authorAvatar ??
-        'https://api.dicebear.com/7.x/avataaars/svg?seed=${widget.comment.userId}';
-
+    final colors = context.colors;
     return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: widget.isReply ? 20 : 12,
-        vertical: 12,
+      padding: EdgeInsets.fromLTRB(
+        widget.isReply ? AppSpace.xxl + AppSpace.lg : AppSpace.lg,
+        AppSpace.lg,
+        AppSpace.sm,
+        AppSpace.md,
       ),
       decoration: BoxDecoration(
-        color: widget.isReply ? Colors.grey[50] : Colors.white,
-        border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+        border: Border(
+          bottom: BorderSide(
+            color: widget.isReply ? Colors.transparent : colors.line,
+          ),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 作者信息行
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              InkWell(
-                onTap: () => widget.onAuthorTap?.call(widget.comment.userId),
-                child: CircleAvatar(
-                  radius: 16,
-                  backgroundImage: NetworkImage(avatarUrl),
+              Semantics(
+                button: true,
+                label: '查看评论作者',
+                child: GestureDetector(
+                  onTap: () => widget.onAuthorTap?.call(widget.comment.userId),
+                  child: AppAvatar(
+                    url: widget.comment.authorAvatar,
+                    size: AppSize.avatarSmall,
+                  ),
                 ),
               ),
-              SizedBox(width: 8),
+              const SizedBox(width: AppSpace.sm),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    InkWell(
-                      onTap: () =>
-                          widget.onAuthorTap?.call(widget.comment.userId),
-                      child: Text(
-                        widget.comment.authorNickname ?? '匿名用户',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                    Row(
+                      children: [
+                        Flexible(
+                          child: GestureDetector(
+                            onTap: () =>
+                                widget.onAuthorTap?.call(widget.comment.userId),
+                            child: Text(
+                              widget.comment.authorNickname
+                                          ?.trim()
+                                          .isNotEmpty ==
+                                      true
+                                  ? widget.comment.authorNickname!
+                                  : '雪友',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppText.bodySmall.copyWith(
+                                color: colors.ink,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: AppSpace.sm),
+                        Text(
+                          TimeUtils.formatRelativeTime(
+                            widget.comment.createdAt,
+                          ),
+                          style: AppText.caption.copyWith(color: colors.muted),
+                        ),
+                      ],
                     ),
+                    const SizedBox(height: AppSpace.xs),
                     Text(
-                      TimeUtils.formatRelativeTime(widget.comment.createdAt),
-                      style: TextStyle(color: Colors.grey[500], fontSize: 11),
+                      widget.comment.content,
+                      style: AppText.body.copyWith(color: colors.ink),
+                    ),
+                    const SizedBox(height: AppSpace.sm),
+                    Row(
+                      children: [
+                        _SmallAction(
+                          icon: _liked ? AppIcons.heartFilled : AppIcons.heart,
+                          label: _likeCount > 0 ? '$_likeCount' : '赞',
+                          active: _liked,
+                          onTap: _toggleLike,
+                        ),
+                        const SizedBox(width: AppSpace.lg),
+                        _SmallAction(
+                          icon: AppIcons.comment,
+                          label: '回复',
+                          onTap: widget.onReplyPressed ?? () {},
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-              // 更多菜单
-              PopupMenuButton(
-                itemBuilder: (context) => [
-                  if (isOwn)
-                    const PopupMenuItem(child: Text('编辑'), value: 'edit'),
-                  if (isOwn)
-                    const PopupMenuItem(child: Text('删除'), value: 'delete'),
-                  const PopupMenuItem(child: Text('举报'), value: 'report'),
+              Semantics(
+                button: true,
+                label: '评论操作菜单',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  onTap: _openMenu,
+                  child: SizedBox(
+                    width: AppSize.tap,
+                    height: AppSize.tap,
+                    child: Icon(AppIcons.more, size: 18, color: colors.muted),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (widget.comment.replies.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(
+                left: AppSize.avatarSmall + AppSpace.sm,
+                top: AppSpace.sm,
+              ),
+              child: Column(
+                children: [
+                  for (final reply in widget.comment.replies)
+                    CommentItem(
+                      key: ValueKey(reply.id),
+                      comment: reply,
+                      isReply: true,
+                      onReplyPressed: widget.onReplyPressed,
+                      onDeleted: widget.onDeleted,
+                      onChanged: widget.onChanged,
+                      onAuthorTap: widget.onAuthorTap,
+                      onReportPressed: widget.onReportPressed,
+                    ),
                 ],
-                onSelected: (value) {
-                  if (value == 'edit') {
-                    _editComment();
-                  } else if (value == 'delete') {
-                    _deleteComment();
-                  } else if (value == 'report') {
-                    widget.onReportPressed?.call();
-                  }
-                },
               ),
-            ],
-          ),
-          SizedBox(height: 8),
-
-          // 评论内容
-          Text(
-            widget.comment.content,
-            style: TextStyle(fontSize: 14, height: 1.5),
-          ),
-          SizedBox(height: 8),
-
-          // 操作栏（点赞、回复）
-          Row(
-            children: [
-              // 点赞按钮
-              GestureDetector(
-                onTap: _toggleLike,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      _isLiked ? Icons.thumb_up : Icons.thumb_up_outlined,
-                      size: 16,
-                      color: _isLiked ? Colors.blue : Colors.grey[600],
-                    ),
-                    SizedBox(width: 4),
-                    Text(
-                      '赞',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: _isLiked ? Colors.blue : Colors.grey[600],
-                      ),
-                    ),
-                    if (_likeCount > 0) ...[
-                      SizedBox(width: 2),
-                      Text(
-                        _likeCount.toString(),
-                        style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              SizedBox(width: 16),
-
-              // 回复按钮
-              GestureDetector(
-                onTap: widget.onReplyPressed,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.reply, size: 16, color: Colors.grey[600]),
-                    SizedBox(width: 4),
-                    Text(
-                      '回复',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          // 回复列表（如果有）
-          if (widget.comment.replies.isNotEmpty) ...[
-            SizedBox(height: 8),
-            Divider(height: 1),
-            SizedBox(height: 8),
-            ...widget.comment.replies.map((reply) {
-              return CommentItem(
-                comment: reply,
-                isReply: true,
-                onReplyPressed: widget.onReplyPressed,
-                onDeleted: widget.onDeleted,
-                onLikeChanged: widget.onLikeChanged,
-                onChanged: widget.onChanged,
-                onAuthorTap: widget.onAuthorTap,
-                onReportPressed: widget.onReportPressed,
-              );
-            }).toList(),
-          ],
+            ),
         ],
+      ),
+    );
+  }
+}
+
+class _SmallAction extends StatelessWidget {
+  const _SmallAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.active = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final color = active ? colors.danger : colors.muted;
+    return Semantics(
+      button: true,
+      label: label,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpace.xs,
+            vertical: AppSpace.xs,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 4),
+              Text(label, style: AppText.caption.copyWith(color: color)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MenuRow extends StatelessWidget {
+  const _MenuRow({
+    required this.label,
+    required this.onTap,
+    this.danger = false,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        height: 52,
+        alignment: Alignment.centerLeft,
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: colors.line)),
+        ),
+        child: Text(
+          label,
+          style: AppText.body.copyWith(
+            color: danger ? colors.danger : colors.ink,
+          ),
+        ),
       ),
     );
   }

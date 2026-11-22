@@ -6,94 +6,101 @@ import '../models/base_entity.dart';
 import '../models/user_profile.dart';
 import '../services/entity_service.dart';
 import '../services/moderation_service.dart';
+import '../services/profile_sync_service.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
+import '../theme/app_typography.dart';
+import '../utils/time_utils.dart';
+import '../widgets/app/app_avatar.dart';
+import '../widgets/app/app_button.dart';
+import '../widgets/app/app_icons.dart';
+import '../widgets/app/app_state_views.dart';
+import '../widgets/app/region_tag.dart';
+import 'admin_center_page.dart';
 import 'edit_profile_page.dart';
 import 'login_page.dart';
-import 'post_detail_page.dart';
-import 'register_page.dart';
-import 'admin_center_page.dart';
-import 'notifications_page.dart';
-import '../services/profile_sync_service.dart';
-import 'my_posts_page.dart';
 import 'my_content_page.dart';
+import 'my_posts_page.dart';
+import 'notifications_page.dart';
+import 'post_detail_page.dart';
 
 class ProfilePage extends StatefulWidget {
-  final String? userId;
-
   const ProfilePage({super.key, this.userId});
+
+  final String? userId;
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  final _client = Supabase.instance.client;
-  final _entityService = EntityService();
-  final _moderationService = ModerationService();
+  final SupabaseClient _client = Supabase.instance.client;
+  final EntityService _entityService = EntityService();
+  final ModerationService _moderationService = ModerationService();
+
   UserProfile? _profile;
-  List<BaseEntity> _posts = [];
+  List<BaseEntity> _posts = <BaseEntity>[];
   bool _loading = true;
   String? _error;
 
   String? get _targetUserId => widget.userId ?? _client.auth.currentUser?.id;
 
-  bool get _isOwnProfile =>
+  bool get _isOwn =>
       widget.userId == null || widget.userId == _client.auth.currentUser?.id;
 
   @override
   void initState() {
     super.initState();
-    _loadProfile();
+    _load();
   }
 
   @override
   void didUpdateWidget(covariant ProfilePage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.userId != widget.userId) {
-      _loadProfile();
-    }
+    if (oldWidget.userId != widget.userId) _load();
   }
 
-  Future<void> _loadProfile() async {
+  Future<void> _load() async {
     final userId = _targetUserId;
     if (userId == null) {
-      if (mounted) setState(() => _loading = false);
+      if (!mounted) return;
+      setState(() => _loading = false);
       return;
     }
-
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      if (_isOwnProfile) {
+      if (_isOwn) {
         await ProfileSyncService().ensureCurrentProfile();
       }
-
-      final profileFuture = () async {
-        return await _client
-            .from('user_profiles')
-            .select()
-            .eq('id', userId)
-            .maybeSingle();
-      }();
+      final profileFuture = _client
+          .from('user_profiles')
+          .select()
+          .eq('id', userId)
+          .maybeSingle();
       final postsFuture = _entityService.fetchUserEntities(
         userId: userId,
         type: 'post',
       );
       final results = await Future.wait<dynamic>([profileFuture, postsFuture]);
-      final profile = results[0] as Map<String, dynamic>?;
+      final profileRow = results[0] as Map<String, dynamic>?;
       final posts = results[1] as List<BaseEntity>;
       if (!mounted) return;
       setState(() {
-        _profile = profile == null
+        _profile = profileRow == null
             ? UserProfile(id: userId, updatedAt: DateTime.now())
-            : UserProfile.fromJson(Map<String, dynamic>.from(profile));
+            : UserProfile.fromJson(Map<String, dynamic>.from(profileRow));
         _posts = posts;
         _loading = false;
       });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _loading = false;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
     }
   }
 
@@ -102,7 +109,7 @@ class _ProfilePageState extends State<ProfilePage> {
       context,
       MaterialPageRoute(builder: (_) => const EditProfilePage()),
     );
-    if (updated == true) _loadProfile();
+    if (updated == true) await _load();
   }
 
   Future<void> _signOut() async {
@@ -110,11 +117,10 @@ class _ProfilePageState extends State<ProfilePage> {
       await _client.auth.signOut();
       if (mounted) setState(() {});
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('退出失败: $e')));
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('退出失败：$e')));
     }
   }
 
@@ -123,16 +129,16 @@ class _ProfilePageState extends State<ProfilePage> {
     if (userId == null) return;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('拉黑用户？'),
-        content: const Text('拉黑后将不再主动看到该用户的内容。'),
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('拉黑这位雪友？'),
+        content: const Text('拉黑后，你将不再看到对方的内容。'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('取消'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('拉黑'),
           ),
         ],
@@ -141,324 +147,343 @@ class _ProfilePageState extends State<ProfilePage> {
     if (confirmed != true) return;
     try {
       await _moderationService.blockUser(userId);
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('已拉黑该用户')));
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已拉黑该用户')));
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('操作失败：$e')));
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('操作失败：$e')));
     }
+  }
+
+  void _open(MyContentKind kind) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => MyContentPage(kind: kind)),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final title = _isOwnProfile ? '我的主页' : '用户主页';
     return Scaffold(
       appBar: AppBar(
-        title: Text(title),
-        actions: _client.auth.currentUser != null
-            ? [
-                if (!_isOwnProfile)
-                  IconButton(
-                    onPressed: _blockUser,
-                    tooltip: '拉黑',
-                    icon: const Icon(Icons.block),
-                  ),
-                if (_isOwnProfile)
-                  IconButton(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const NotificationsPage(),
-                      ),
-                    ),
-                    tooltip: '通知',
-                    icon: const Icon(Icons.notifications_none),
-                  ),
-                if (_isOwnProfile)
-                  IconButton(
-                    onPressed: _signOut,
-                    tooltip: '退出登录',
-                    icon: const Icon(Icons.logout),
-                  ),
-              ]
-            : null,
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-          ? _buildError()
-          : _targetUserId == null
-          ? _buildLoggedOut()
-          : RefreshIndicator(
-              onRefresh: _loadProfile,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  _buildHeader(),
-                  if (_isOwnProfile) ...[
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: _editProfile,
-                      icon: const Icon(Icons.edit),
-                      label: const Text('编辑资料'),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        OutlinedButton(
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const MyPostsPage(),
-                            ),
-                          ),
-                          child: const Text('我的帖子'),
-                        ),
-                        OutlinedButton(
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const MyContentPage(
-                                kind: MyContentKind.comments,
-                              ),
-                            ),
-                          ),
-                          child: const Text('我的评论'),
-                        ),
-                        OutlinedButton(
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const MyContentPage(
-                                kind: MyContentKind.favorites,
-                              ),
-                            ),
-                          ),
-                          child: const Text('我的收藏'),
-                        ),
-                        OutlinedButton(
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const MyContentPage(
-                                kind: MyContentKind.activities,
-                              ),
-                            ),
-                          ),
-                          child: const Text('我的活动'),
-                        ),
-                        OutlinedButton(
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const MyContentPage(
-                                kind: MyContentKind.community,
-                              ),
-                            ),
-                          ),
-                          child: const Text('社区服务'),
-                        ),
-                        OutlinedButton(
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const MyContentPage(
-                                kind: MyContentKind.about,
-                              ),
-                            ),
-                          ),
-                          child: const Text('关于 Snow Fish'),
-                        ),
-                        OutlinedButton(
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const MyContentPage(
-                                kind: MyContentKind.settings,
-                              ),
-                            ),
-                          ),
-                          child: const Text('设置'),
-                        ),
-                      ],
-                    ),
-                    if (_profile?.role == 'admin') ...[
-                      const SizedBox(height: 8),
-                      OutlinedButton.icon(
-                        onPressed: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const AdminCenterPage(),
-                          ),
-                        ),
-                        icon: const Icon(Icons.shield_outlined),
-                        label: const Text('内容治理中心'),
-                      ),
-                    ],
-                  ],
-                  const SizedBox(height: 20),
-                  Text(
-                    '${_isOwnProfile ? '我' : 'TA'}发布的动态',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  if (_posts.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 32),
-                      child: Center(child: Text('还没有发布动态')),
-                    )
-                  else
-                    ..._posts.map(_buildPostCard),
-                ],
+        title: Text(_isOwn ? '我的' : '雪友主页'),
+        actions: [
+          if (_client.auth.currentUser != null && _isOwn)
+            IconButton(
+              tooltip: '通知',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const NotificationsPage()),
               ),
+              icon: const Icon(AppIcons.bell),
             ),
+          if (_client.auth.currentUser != null && _isOwn)
+            IconButton(
+              tooltip: '退出登录',
+              onPressed: _signOut,
+              icon: const Icon(AppIcons.logout),
+            ),
+          if (!_isOwn)
+            IconButton(
+              tooltip: '拉黑',
+              onPressed: _blockUser,
+              icon: const Icon(AppIcons.block),
+            ),
+        ],
+      ),
+      body: _buildBody(),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading) return const AppLoadingSkeleton(rows: 2);
+    if (_error != null) return AppStateView.error(onRetry: _load);
+    if (_targetUserId == null) {
+      return AppStateView.login(
+        onLogin: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginPage()),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.zero,
+        children: [
+          _buildHeader(),
+          if (_isOwn) _buildEntries(),
+          _buildPostSection(),
+          const SizedBox(height: AppSpace.xxxl),
+        ],
+      ),
     );
   }
 
   Widget _buildHeader() {
+    final colors = context.colors;
     final profile = _profile;
-    return Card(
-      clipBehavior: Clip.antiAlias,
+    final name = (profile?.nickname?.trim().isNotEmpty ?? false)
+        ? profile!.nickname!.trim()
+        : '匿名用户';
+    final bio = (profile?.bio?.trim().isNotEmpty ?? false)
+        ? profile!.bio!.trim()
+        : '这个人还没有签名';
+    final cover = profile?.backgroundUrl?.trim() ?? '';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 150,
+          child: cover.isEmpty
+              ? Container(color: colors.soft)
+              : CachedNetworkImage(
+                  imageUrl: cover,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  placeholder: (_, __) => Container(color: colors.soft),
+                  errorWidget: (_, __, ___) => Container(color: colors.soft),
+                ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpace.xl),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Transform.translate(
+                offset: const Offset(0, -26),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        color: colors.paper,
+                        shape: BoxShape.circle,
+                      ),
+                      child: AppAvatar(url: profile?.avatarUrl, size: 56),
+                    ),
+                    const Spacer(),
+                    if (_isOwn)
+                      AppButton(
+                        label: '编辑资料',
+                        variant: AppButtonVariant.outline,
+                        dense: true,
+                        onPressed: _editProfile,
+                      )
+                    else
+                      AppButton(
+                        label: '举报',
+                        variant: AppButtonVariant.outline,
+                        dense: true,
+                        icon: AppIcons.flag,
+                        onPressed: () =>
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('请在该雪友的帖子内举报具体内容')),
+                            ),
+                      ),
+                  ],
+                ),
+              ),
+              Text(name, style: AppText.display.copyWith(color: colors.ink)),
+              const SizedBox(height: AppSpace.sm),
+              Text(bio, style: AppText.body.copyWith(color: colors.ink)),
+              const SizedBox(height: AppSpace.sm),
+              RegionTag(
+                region: profile?.residentRegion,
+                resort: profile?.residentResort,
+              ),
+              const SizedBox(height: AppSpace.lg),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEntries() {
+    final colors = context.colors;
+    final entries = <_Entry>[
+      _Entry(
+        '我的帖子',
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const MyPostsPage()),
+        ),
+      ),
+      _Entry('我的评论', () => _open(MyContentKind.comments)),
+      _Entry('我的收藏', () => _open(MyContentKind.favorites)),
+      _Entry('我的活动', () => _open(MyContentKind.activities)),
+      _Entry('社区服务', () => _open(MyContentKind.community)),
+      _Entry('关于 Snow Fish', () => _open(MyContentKind.about)),
+      _Entry('设置', () => _open(MyContentKind.settings)),
+      if (_profile?.role == 'admin')
+        _Entry(
+          '内容治理中心',
+          () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AdminCenterPage()),
+          ),
+        ),
+    ];
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: AppSpace.xl),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(color: colors.line),
+          bottom: BorderSide(color: colors.line),
+        ),
+      ),
       child: Column(
         children: [
-          SizedBox(
-            height: 150,
-            width: double.infinity,
-            child: profile?.backgroundUrl?.isNotEmpty == true
-                ? CachedNetworkImage(
-                    imageUrl: profile!.backgroundUrl!,
-                    fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) =>
-                        Container(color: Colors.blueGrey.shade100),
-                  )
-                : Container(color: Colors.blueGrey.shade100),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 34,
-                  backgroundImage: profile?.avatarUrl?.isNotEmpty == true
-                      ? CachedNetworkImageProvider(profile!.avatarUrl!)
-                      : null,
-                  child: profile?.avatarUrl?.isNotEmpty == true
-                      ? null
-                      : const Icon(Icons.person, size: 32),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        profile?.nickname?.trim().isNotEmpty == true
-                            ? profile!.nickname!
-                            : '匿名用户',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        profile?.bio?.trim().isNotEmpty == true
-                            ? profile!.bio!
-                            : '这个人还没有签名',
-                      ),
-                      if ((profile?.residentRegion?.isNotEmpty == true ||
-                          profile?.residentResort?.isNotEmpty == true &&
-                              profile?.residentResort != '暂无固定雪场'))
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Text(
-                            [
-                              if (profile?.residentRegion?.isNotEmpty == true)
-                                profile!.residentRegion!,
-                              if (profile?.residentResort?.isNotEmpty == true &&
-                                  profile?.residentResort != '暂无固定雪场')
-                                profile!.residentResort!,
-                            ].join(' · '),
-                            style: const TextStyle(
-                              color: Colors.grey,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                    ],
+          for (final entry in entries)
+            InkWell(
+              onTap: entry.onTap,
+              child: Container(
+                height: 52,
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: entry == entries.last
+                          ? Colors.transparent
+                          : colors.line,
+                    ),
                   ),
                 ),
-              ],
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        entry.label,
+                        style: AppText.body.copyWith(color: colors.ink),
+                      ),
+                    ),
+                    Icon(AppIcons.chevron, size: 18, color: colors.muted),
+                  ],
+                ),
+              ),
             ),
-          ),
         ],
       ),
     );
   }
 
-  Widget _buildPostCard(BaseEntity post) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
-        title: Text(post.title),
-        subtitle: Text(
-          post.content?.trim().isNotEmpty == true ? post.content! : '无正文',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => PostDetailPage(postId: post.id)),
-        ),
+  Widget _buildPostSection() {
+    final colors = context.colors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpace.xl,
+        AppSpace.xxl,
+        AppSpace.xl,
+        0,
       ),
-    );
-  }
-
-  Widget _buildLoggedOut() {
-    return Center(
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('登录后管理个人资料并发布动态'),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const LoginPage()),
-            ),
-            child: const Text('登录'),
+          Text(
+            _isOwn ? '我发布的动态' : 'TA 发布的动态',
+            style: AppText.title.copyWith(color: colors.ink),
           ),
-          TextButton(
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const RegisterPage()),
+          const SizedBox(height: AppSpace.md),
+          if (_posts.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpace.xxl),
+              child: Center(
+                child: Text(
+                  '还没有发布动态',
+                  style: AppText.bodySmall.copyWith(color: colors.muted),
+                ),
+              ),
+            )
+          else
+            Container(
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: colors.line)),
+              ),
+              child: Column(
+                children: [
+                  for (final post in _posts)
+                    InkWell(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PostDetailPage(postId: post.id),
+                        ),
+                      ),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          border: Border(
+                            bottom: BorderSide(color: colors.line),
+                          ),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: AppSpace.lg,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    post.title,
+                                    style: AppText.body.copyWith(
+                                      color: colors.ink,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: AppSpace.xs),
+                                  Text(
+                                    (post.content ?? '').trim().isEmpty
+                                        ? '无正文'
+                                        : post.content!.trim(),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppText.bodySmall.copyWith(
+                                      color: colors.muted,
+                                    ),
+                                  ),
+                                  const SizedBox(height: AppSpace.xs),
+                                  Text(
+                                    TimeUtils.formatRelativeTime(
+                                      post.createdAt,
+                                    ),
+                                    style: AppText.caption.copyWith(
+                                      color: colors.muted,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              AppIcons.chevron,
+                              size: 18,
+                              color: colors.muted,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
-            child: const Text('注册'),
-          ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildError() => Center(
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Text('用户主页加载失败'),
-        TextButton(onPressed: _loadProfile, child: const Text('重试')),
-      ],
-    ),
-  );
+class _Entry {
+  const _Entry(this.label, this.onTap);
+
+  final String label;
+  final VoidCallback onTap;
 }

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'supabase_client.dart';
 import 'config.dart';
 import 'pages/home_tabs.dart';
+import 'theme/app_spacing.dart';
+import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,22 +27,23 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Ski Market',
+      title: 'skneo · 雪鱼社区',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          titleTextStyle: TextStyle(
-            color: Colors.black,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.system,
+      // 桌面/平板上把内容限制在移动端宽度，避免拉伸成另一种版式。
+      builder: (context, child) {
+        return ColoredBox(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: AppSize.pageMax),
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
-          iconTheme: IconThemeData(color: Colors.black),
-        ),
-      ),
-      // 使用底部标签页容器作为首页
+        );
+      },
       home: const HomeTabs(),
     );
   }

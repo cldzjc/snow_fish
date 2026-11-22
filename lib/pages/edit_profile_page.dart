@@ -10,7 +10,13 @@ import 'package:path/path.dart' as p;
 import 'package:flutter/foundation.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../utils/custom_cropper.dart';
+import '../constants/geo.dart';
 import '../services/profile_sync_service.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
+import '../widgets/app/app_avatar.dart';
+import '../widgets/app/app_button.dart';
+import '../widgets/app/app_field.dart';
 
 // Top-level function for compute to compress images in a background isolate
 Uint8List _compressImageIsolate(Map<String, dynamic> args) {
@@ -417,210 +423,144 @@ class _EditProfilePageState extends State<EditProfilePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('编辑主页')),
+      appBar: AppBar(title: const Text('编辑资料')),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('用户名', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _usernameController,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                hintText: '用户名',
+            AppField(
+              label: '昵称',
+              requiredMark: true,
+              child: AppTextField(
+                controller: _usernameController,
+                hint: '你的雪友昵称',
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpace.lg),
 
-            const Text('个性签名', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _introController,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                hintText: '一句话介绍',
+            AppField(
+              label: '个性签名',
+              child: AppTextField(
+                controller: _introController,
+                hint: '一句话介绍',
+                minLines: 3,
+                maxLines: 4,
               ),
             ),
-            const SizedBox(height: 16),
-            const Text('常驻地区', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              value: _residentRegion,
-              decoration: const InputDecoration(border: OutlineInputBorder()),
-              items:
-                  const [
-                        '北京',
-                        '河北',
-                        '吉林',
-                        '辽宁',
-                        '黑龙江',
-                        '内蒙古',
-                        '山东',
-                        '新疆',
-                        '甘肃',
-                        '四川',
-                        '云南',
-                        '陕西',
-                        '山西',
-                        '其他',
-                      ]
-                      .map(
-                        (value) =>
-                            DropdownMenuItem(value: value, child: Text(value)),
-                      )
-                      .toList(),
-              onChanged: (value) => setState(() => _residentRegion = value),
+            const SizedBox(height: AppSpace.lg),
+            AppField(
+              label: '常驻地区',
+              child: AppDropdown<String>(
+                options: [
+                  for (final province in GeoData.provinces)
+                    AppOption<String>(province, province),
+                ],
+                value: _residentRegion,
+                hint: '请选择常驻地区',
+                onChanged: (value) => setState(() => _residentRegion = value),
+              ),
             ),
-            const SizedBox(height: 16),
-            const Text('常驻雪场', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              value: _residentResort,
-              decoration: const InputDecoration(border: OutlineInputBorder()),
-              items:
-                  const [
-                        '暂无固定雪场',
-                        '崇礼·富龙',
-                        '崇礼·万龙',
-                        '崇礼·云顶',
-                        '崇礼·太舞',
-                        '河北·崇礼',
-                        '新疆·阿勒泰',
-                        '吉林·北大湖',
-                        '辽宁·抚顺雷锋',
-                        '北京·莲石湖',
-                        '甘肃·平堡',
-                      ]
-                      .map(
-                        (value) =>
-                            DropdownMenuItem(value: value, child: Text(value)),
-                      )
-                      .toList(),
-              onChanged: (value) =>
-                  setState(() => _residentResort = value ?? '暂无固定雪场'),
-            ),
-            const SizedBox(height: 16),
-
-            // Avatar picker
-            const Text('头像', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                _pickedAvatar != null
-                    ? (_pickedAvatar!.bytes != null
-                          ? Image.memory(
-                              _pickedAvatar!.bytes!,
-                              width: 80,
-                              height: 80,
-                              fit: BoxFit.cover,
-                            )
-                          : Image.file(
-                              File(_pickedAvatar!.path!),
-                              width: 80,
-                              height: 80,
-                              fit: BoxFit.cover,
-                            ))
-                    : (_avatarUrl != null && _avatarUrl!.isNotEmpty
-                          ? CachedNetworkImage(
-                              imageUrl: _avatarUrl!,
-                              width: 80,
-                              height: 80,
-                              fit: BoxFit.cover,
-                              placeholder: (context, url) => Container(
-                                width: 80,
-                                height: 80,
-                                color: Colors.grey[200],
-                                child: const Center(
-                                  child: CircularProgressIndicator(),
-                                ),
-                              ),
-                              errorWidget: (context, url, error) => Container(
-                                width: 80,
-                                height: 80,
-                                color: Colors.grey[200],
-                                child: const Icon(Icons.person),
-                              ),
-                            )
-                          : Container(
-                              width: 80,
-                              height: 80,
-                              color: Colors.grey[200],
-                              child: const Icon(Icons.person),
-                            )),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  onPressed: _pickAvatar,
-                  child: const Text('选择头像'),
+            const SizedBox(height: AppSpace.lg),
+            AppField(
+              label: '常驻雪场',
+              note: '没有固定雪场可以选「${GeoData.noFixedResort}」',
+              child: AppDropdown<String>(
+                options: [
+                  for (final resort in GeoData.resorts)
+                    AppOption<String>(resort, resort),
+                ],
+                value: _residentResort,
+                hint: '请选择常驻雪场',
+                onChanged: (value) => setState(
+                  () => _residentResort = value ?? GeoData.noFixedResort,
                 ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Cover picker
-            const Text('背景图', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                _pickedCover != null
-                    ? (_pickedCover!.bytes != null
-                          ? Image.memory(
-                              _pickedCover!.bytes!,
-                              width: 120,
-                              height: 70,
-                              fit: BoxFit.cover,
-                            )
-                          : Image.file(
-                              File(_pickedCover!.path!),
-                              width: 120,
-                              height: 70,
-                              fit: BoxFit.cover,
-                            ))
-                    : (_coverUrl != null && _coverUrl!.isNotEmpty
-                          ? CachedNetworkImage(
-                              imageUrl: _coverUrl!,
-                              width: 120,
-                              height: 70,
-                              fit: BoxFit.cover,
-                              placeholder: (context, url) => Container(
-                                width: 120,
-                                height: 70,
-                                color: Colors.grey[200],
-                                child: const Center(
-                                  child: CircularProgressIndicator(),
-                                ),
-                              ),
-                              errorWidget: (context, url, error) => Container(
-                                width: 120,
-                                height: 70,
-                                color: Colors.grey[200],
-                              ),
-                            )
-                          : Container(
-                              width: 120,
-                              height: 70,
-                              color: Colors.grey[200],
-                            )),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  onPressed: _pickCover,
-                  child: const Text('选择背景'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                onPressed: _isSaving ? null : _save,
-                child: _isSaving
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text('保存'),
               ),
+            ),
+            const SizedBox(height: AppSpace.lg),
+
+            AppField(
+              label: '头像',
+              child: Row(
+                children: [
+                  _pickedAvatar != null
+                      ? ClipOval(
+                          child: SizedBox(
+                            width: 72,
+                            height: 72,
+                            child: _pickedAvatar!.bytes != null
+                                ? Image.memory(
+                                    _pickedAvatar!.bytes!,
+                                    fit: BoxFit.cover,
+                                  )
+                                : Image.file(
+                                    File(_pickedAvatar!.path!),
+                                    fit: BoxFit.cover,
+                                  ),
+                          ),
+                        )
+                      : AppAvatar(url: _avatarUrl, size: 72),
+                  const SizedBox(width: AppSpace.lg),
+                  AppButton(
+                    label: '选择头像',
+                    variant: AppButtonVariant.outline,
+                    dense: true,
+                    onPressed: _pickAvatar,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpace.lg),
+
+            AppField(
+              label: '背景图',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    child: SizedBox(
+                      height: 104,
+                      width: double.infinity,
+                      child: _pickedCover != null
+                          ? (_pickedCover!.bytes != null
+                                ? Image.memory(
+                                    _pickedCover!.bytes!,
+                                    fit: BoxFit.cover,
+                                  )
+                                : Image.file(
+                                    File(_pickedCover!.path!),
+                                    fit: BoxFit.cover,
+                                  ))
+                          : (_coverUrl != null && _coverUrl!.isNotEmpty
+                                ? CachedNetworkImage(
+                                    imageUrl: _coverUrl!,
+                                    fit: BoxFit.cover,
+                                    placeholder: (context, url) =>
+                                        Container(color: context.colors.soft),
+                                    errorWidget: (context, url, error) =>
+                                        Container(color: context.colors.soft),
+                                  )
+                                : Container(color: context.colors.soft)),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpace.md),
+                  AppButton(
+                    label: '选择背景图',
+                    variant: AppButtonVariant.outline,
+                    dense: true,
+                    onPressed: _pickCover,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpace.xxl),
+
+            AppButton(
+              label: '保存',
+              expand: true,
+              loading: _isSaving,
+              onPressed: _save,
             ),
           ],
         ),

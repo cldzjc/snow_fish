@@ -4,7 +4,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/base_entity.dart';
 import '../services/comment_service.dart';
 import '../services/entity_service.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
+import '../theme/app_typography.dart';
 import '../utils/time_utils.dart';
+import '../widgets/app/app_icons.dart';
+import '../widgets/app/app_state_views.dart';
+import '../widgets/app/app_tabs.dart';
+import '../widgets/app/status_chip.dart';
 import 'post_detail_page.dart';
 
 enum MyContentKind {
@@ -17,9 +24,9 @@ enum MyContentKind {
 }
 
 class MyContentPage extends StatefulWidget {
-  final MyContentKind kind;
-
   const MyContentPage({super.key, required this.kind});
+
+  final MyContentKind kind;
 
   String get title => switch (kind) {
     MyContentKind.comments => '我的评论',
@@ -34,36 +41,25 @@ class MyContentPage extends StatefulWidget {
   State<MyContentPage> createState() => _MyContentPageState();
 }
 
-class _MyContentPageState extends State<MyContentPage>
-    with SingleTickerProviderStateMixin {
-  final _client = Supabase.instance.client;
-  final _entityService = EntityService();
-  final _commentService = CommentService();
+class _MyContentPageState extends State<MyContentPage> {
+  final SupabaseClient _client = Supabase.instance.client;
+  final EntityService _entityService = EntityService();
+  final CommentService _commentService = CommentService();
 
-  TabController? _activityTabs;
-
+  int _activityTab = 0;
   bool _loading = true;
   String? _error;
 
-  List<Map<String, dynamic>> _comments = [];
-  List<BaseEntity> _favorites = [];
-  List<BaseEntity> _created = [];
-  List<BaseEntity> _joined = [];
-  List<BaseEntity> _ended = [];
+  List<Map<String, dynamic>> _comments = <Map<String, dynamic>>[];
+  List<BaseEntity> _favorites = <BaseEntity>[];
+  List<BaseEntity> _created = <BaseEntity>[];
+  List<BaseEntity> _joined = <BaseEntity>[];
+  List<BaseEntity> _ended = <BaseEntity>[];
 
   @override
   void initState() {
     super.initState();
-    if (widget.kind == MyContentKind.activities) {
-      _activityTabs = TabController(length: 3, vsync: this);
-    }
     _load();
-  }
-
-  @override
-  void dispose() {
-    _activityTabs?.dispose();
-    super.dispose();
   }
 
   Future<void> _load() async {
@@ -80,10 +76,9 @@ class _MyContentPageState extends State<MyContentPage>
         case MyContentKind.activities:
           final created = await _entityService.fetchMyCreatedActivities();
           final joined = await _entityService.fetchMyJoinedActivities();
-          final merged = <String, BaseEntity>{};
-          for (final item in [...created, ...joined]) {
-            merged[item.id] = item;
-          }
+          final merged = <String, BaseEntity>{
+            for (final item in [...created, ...joined]) item.id: item,
+          };
           final all = merged.values.toList()
             ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
           _created = created;
@@ -109,7 +104,7 @@ class _MyContentPageState extends State<MyContentPage>
 
   Future<List<BaseEntity>> _loadFavorites() async {
     final user = _client.auth.currentUser;
-    if (user == null) return [];
+    if (user == null) return <BaseEntity>[];
     final rows = await _client
         .from('interactions')
         .select('entity_id')
@@ -120,7 +115,7 @@ class _MyContentPageState extends State<MyContentPage>
         .map((row) => row['entity_id'] as String?)
         .whereType<String>()
         .toList();
-    if (ids.isEmpty) return [];
+    if (ids.isEmpty) return <BaseEntity>[];
     final entities = await _client
         .from('entities')
         .select('*, media(*)')
@@ -135,98 +130,95 @@ class _MyContentPageState extends State<MyContentPage>
   @override
   Widget build(BuildContext context) {
     if (widget.kind == MyContentKind.community) {
-      return _staticScaffold('社区服务功能正在整理');
+      return _staticScaffold('社区服务', '举报、申诉与社区规则说明会放在这里，目前还在整理。');
     }
     if (widget.kind == MyContentKind.about) {
-      return _staticScaffold('Snow Fish — skneo 滑雪社区');
+      return _staticScaffold(
+        '关于 Snow Fish',
+        'Snow Fish（skneo）是给滑雪人的日常社区：\n记录雪上日常，也找到下一趟的同伴。',
+      );
     }
     if (widget.kind == MyContentKind.settings) {
-      return _staticScaffold('设置功能尚未开放');
+      return _staticScaffold('设置', '账号与通知设置尚未开放。如需修改资料，请在「我的」页进入「编辑资料」。');
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title),
-        bottom: _activityTabs == null
-            ? null
-            : TabBar(
-                controller: _activityTabs,
-                tabs: const [
-                  Tab(text: '我发起的'),
-                  Tab(text: '我参与的'),
-                  Tab(text: '已结束'),
-                ],
-              ),
+      appBar: AppBar(title: Text(widget.title)),
+      body: Column(
+        children: [
+          if (widget.kind == MyContentKind.activities)
+            AppTabs(
+              tabs: const ['我发起的', '我参与的', '已结束'],
+              index: _activityTab,
+              onChanged: (index) => setState(() => _activityTab = index),
+            ),
+          Expanded(child: _buildBody()),
+        ],
       ),
-      body: _buildBody(),
     );
   }
 
-  Widget _staticScaffold(String text) {
+  Widget _staticScaffold(String title, String text) {
+    final colors = context.colors;
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
-      body: Center(child: Text(text)),
+      appBar: AppBar(title: Text(title)),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpace.xxl),
+          child: Text(
+            text,
+            textAlign: TextAlign.center,
+            style: AppText.bodySmall.copyWith(color: colors.muted),
+          ),
+        ),
+      ),
     );
   }
 
   Widget _buildBody() {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_error != null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('加载失败，请稍后重试'),
-            const SizedBox(height: 8),
-            ElevatedButton(onPressed: _load, child: const Text('重试')),
-          ],
-        ),
-      );
-    }
+    if (_loading) return const AppLoadingSkeleton();
+    if (_error != null) return AppStateView.error(onRetry: _load);
 
-    if (widget.kind == MyContentKind.comments) {
-      return _buildCommentList();
+    switch (widget.kind) {
+      case MyContentKind.comments:
+        return _buildComments();
+      case MyContentKind.favorites:
+        return _buildEntities(_favorites, '还没有收藏内容', '在帖子详情点收藏，就会出现在这里。');
+      case MyContentKind.activities:
+        final items = switch (_activityTab) {
+          0 => _created,
+          1 => _joined,
+          _ => _ended,
+        };
+        return _buildEntities(items, '还没有活动', '发起的与报名的活动都会出现在这里。');
+      case MyContentKind.community:
+      case MyContentKind.about:
+      case MyContentKind.settings:
+        return const SizedBox.shrink();
     }
-    if (widget.kind == MyContentKind.favorites) {
-      return _buildEntityList(_favorites, '还没有收藏内容');
-    }
-    return TabBarView(
-      controller: _activityTabs,
-      children: [
-        _buildEntityList(_created, '还没有发起活动'),
-        _buildEntityList(_joined, '还没有参与活动'),
-        _buildEntityList(_ended, '没有已结束的活动'),
-      ],
-    );
   }
 
-  Widget _buildCommentList() {
+  Widget _buildComments() {
     if (_comments.isEmpty) {
-      return _emptyState('还没有发表评论');
+      return _emptyListView('还没有发表评论', '在帖子详情写下第一句。');
     }
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView.separated(
-        padding: const EdgeInsets.all(12),
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.zero,
         itemCount: _comments.length,
-        separatorBuilder: (_, __) => const Divider(height: 1),
-        itemBuilder: (_, index) {
+        separatorBuilder: (_, __) => const SizedBox.shrink(),
+        itemBuilder: (context, index) {
           final item = _comments[index];
           final createdAt = DateTime.tryParse(
             item['created_at']?.toString() ?? '',
           );
-          return ListTile(
-            title: Text(
-              item['content']?.toString() ?? '',
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle: Text(
-              createdAt == null ? '' : TimeUtils.formatRelativeTime(createdAt),
-            ),
-            trailing: const Icon(Icons.chevron_right),
+          return _CommentRow(
+            content: item['content']?.toString() ?? '',
+            time: createdAt == null
+                ? ''
+                : TimeUtils.formatRelativeTime(createdAt),
             onTap: () {
               final entityId = item['entity_id'] as String?;
               if (entityId == null) return;
@@ -243,38 +235,26 @@ class _MyContentPageState extends State<MyContentPage>
     );
   }
 
-  Widget _buildEntityList(List<BaseEntity> items, String emptyText) {
-    if (items.isEmpty) return _emptyState(emptyText);
+  Widget _buildEntities(
+    List<BaseEntity> items,
+    String emptyTitle,
+    String emptyText,
+  ) {
+    if (items.isEmpty) return _emptyListView(emptyTitle, emptyText);
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView.builder(
-        padding: const EdgeInsets.all(12),
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.zero,
         itemCount: items.length,
-        itemBuilder: (_, index) {
+        itemBuilder: (context, index) {
           final item = items[index];
-          final isActivity = item.entityType.startsWith('activity_');
-          final subtitleParts = <String>[
-            if (isActivity) item.extraData['region_id']?.toString() ?? '未设置地区',
-            if (item.content != null && item.content!.trim().isNotEmpty)
-              item.content!.trim(),
-          ];
-          return Card(
-            margin: const EdgeInsets.only(bottom: 8),
-            child: ListTile(
-              title: Text(item.title),
-              subtitle: subtitleParts.isEmpty
-                  ? null
-                  : Text(
-                      subtitleParts.join(' · '),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PostDetailPage(postId: item.id),
-                ),
+          return _EntityRow(
+            entity: item,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PostDetailPage(postId: item.id),
               ),
             ),
           );
@@ -283,14 +263,115 @@ class _MyContentPageState extends State<MyContentPage>
     );
   }
 
-  Widget _emptyState(String text) {
+  Widget _emptyListView(String title, String text) {
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView(
-        children: [
-          const SizedBox(height: 120),
-          Center(child: Text(text)),
-        ],
+      child: AppStateView(
+        icon: AppIcons.mountain,
+        title: title,
+        description: text,
+      ),
+    );
+  }
+}
+
+class _CommentRow extends StatelessWidget {
+  const _CommentRow({
+    required this.content,
+    required this.time,
+    required this.onTap,
+  });
+
+  final String content;
+  final String time;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: colors.line)),
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpace.xl,
+          vertical: AppSpace.lg,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(content, style: AppText.body.copyWith(color: colors.ink)),
+            const SizedBox(height: AppSpace.sm),
+            Text(time, style: AppText.caption.copyWith(color: colors.muted)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EntityRow extends StatelessWidget {
+  const _EntityRow({required this.entity, required this.onTap});
+
+  final BaseEntity entity;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final isActivity = entity.entityType.startsWith('activity_');
+    final region = entity.extraData['region_id']?.toString().trim() ?? '';
+    final excerpt = (entity.content ?? '').trim();
+
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: colors.line)),
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpace.xl,
+          vertical: AppSpace.lg,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    entity.title,
+                    style: AppText.title.copyWith(color: colors.ink),
+                  ),
+                ),
+                if (isActivity)
+                  ActivityStatusChip(
+                    status:
+                        entity.extraData['activity_status']?.toString() ??
+                        'recruiting',
+                  ),
+              ],
+            ),
+            if (excerpt.isNotEmpty) ...[
+              const SizedBox(height: AppSpace.xs),
+              Text(
+                excerpt,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.bodySmall.copyWith(color: colors.muted),
+              ),
+            ],
+            if (region.isNotEmpty) ...[
+              const SizedBox(height: AppSpace.sm),
+              Text(
+                region,
+                style: AppText.caption.copyWith(color: colors.muted),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

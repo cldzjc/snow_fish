@@ -12,6 +12,9 @@ class BaseEntity extends Equatable {
   final Map<String, dynamic> extraData;
   final List<MediaModel> media;
 
+  /// 顶级评论数，由数据库触发器维护。
+  final int commentCount;
+
   const BaseEntity({
     required this.id,
     required this.userId,
@@ -22,6 +25,7 @@ class BaseEntity extends Equatable {
     this.updatedAt,
     this.extraData = const {},
     this.media = const [],
+    this.commentCount = 0,
   });
 
   /// 从数据库行创建 BaseEntity
@@ -57,6 +61,7 @@ class BaseEntity extends Equatable {
           ? DateTime.parse(json['updated_at'])
           : null,
       extraData: extraData,
+      commentCount: (json['comment_count'] as num?)?.toInt() ?? 0,
       media:
           (json['media'] as List?)?.map((m) {
             final map = m is Map<String, dynamic> ? m : m as Map;
@@ -161,6 +166,7 @@ class BaseEntity extends Equatable {
     DateTime? updatedAt,
     Map<String, dynamic>? extraData,
     List<MediaModel>? media,
+    int? commentCount,
   }) {
     return BaseEntity(
       id: id ?? this.id,
@@ -172,6 +178,7 @@ class BaseEntity extends Equatable {
       updatedAt: updatedAt ?? this.updatedAt,
       extraData: extraData ?? this.extraData,
       media: media ?? this.media,
+      commentCount: commentCount ?? this.commentCount,
     );
   }
 
@@ -186,5 +193,6 @@ class BaseEntity extends Equatable {
     updatedAt,
     extraData,
     media,
+    commentCount,
   ];
 }

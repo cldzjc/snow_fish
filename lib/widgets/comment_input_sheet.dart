@@ -1,169 +1,117 @@
 import 'package:flutter/material.dart';
+
 import '../models/comment_model.dart';
 import '../services/comment_service.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
+import '../theme/app_typography.dart';
+import 'app/app_sheet.dart';
 
-/// 评论输入底部弹窗
-class CommentInputSheet extends StatefulWidget {
-  final String entityId; // 帖子/商品ID
-  final CommentModel? replyTo; // 回复的评论（null表示发布新评论）
-  final Function(CommentModel) onCommentSubmitted;
-
-  const CommentInputSheet({
-    super.key,
-    required this.entityId,
-    this.replyTo,
-    required this.onCommentSubmitted,
-  });
-
-  @override
-  State<CommentInputSheet> createState() => _CommentInputSheetState();
+/// 打开写评论 / 回复面板。成功时返回新建的评论，取消返回 null。
+Future<CommentModel?> showCommentInputSheet(
+  BuildContext context, {
+  required String entityId,
+  CommentModel? replyTo,
+}) {
+  final title = replyTo == null
+      ? '写评论'
+      : '回复 @${(replyTo.authorNickname?.trim().isNotEmpty ?? false) ? replyTo.authorNickname : '雪友'}';
+  return showAppSheet<CommentModel>(
+    context,
+    title: title,
+    builder: (_) => _CommentComposer(entityId: entityId, replyTo: replyTo),
+  );
 }
 
-class _CommentInputSheetState extends State<CommentInputSheet> {
-  final _contentController = TextEditingController();
-  late final CommentService _commentService;
-  bool _isSubmitting = false;
+class _CommentComposer extends StatefulWidget {
+  const _CommentComposer({required this.entityId, this.replyTo});
+
+  final String entityId;
+  final CommentModel? replyTo;
 
   @override
-  void initState() {
-    super.initState();
-    _commentService = CommentService();
-  }
+  State<_CommentComposer> createState() => _CommentComposerState();
+}
+
+class _CommentComposerState extends State<_CommentComposer> {
+  final CommentService _commentService = CommentService();
+  final TextEditingController _controller = TextEditingController();
+  bool _submitting = false;
 
   @override
   void dispose() {
-    _contentController.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
-  Future<void> _submitComment() async {
-    final content = _contentController.text.trim();
+  Future<void> _submit() async {
+    final content = _controller.text.trim();
     if (content.isEmpty) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('评论内容不能为空')));
       return;
     }
-
+    setState(() => _submitting = true);
     try {
-      setState(() => _isSubmitting = true);
-
       final comment = await _commentService.createComment(
         entityId: widget.entityId,
         content: content,
         parentId: widget.replyTo?.id,
       );
-
-      if (mounted) {
-        widget.onCommentSubmitted(comment);
-        Navigator.pop(context);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('评论已发布')));
-      }
+      if (!mounted) return;
+      Navigator.of(context).pop(comment);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('评论已发布')));
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('发布失败: $e'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isSubmitting = false);
-      }
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('发布失败：$e')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isReply = widget.replyTo != null;
-    final replyToName = widget.replyTo?.authorNickname ?? '用户';
-
-    return Container(
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 12,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 12,
-      ),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 处理条
-          Align(
-            alignment: Alignment.center,
-            child: Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
+    final colors = context.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: _controller,
+          minLines: 3,
+          maxLines: 6,
+          autofocus: true,
+          style: AppText.body.copyWith(color: colors.ink),
+          decoration: const InputDecoration(hintText: '写下你的想法…'),
+        ),
+        const SizedBox(height: AppSpace.xl),
+        SizedBox(
+          height: 48,
+          child: FilledButton(
+            onPressed: _submitting ? null : _submit,
+            style: FilledButton.styleFrom(
+              backgroundColor: colors.ink,
+              foregroundColor: colors.paper,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadius.md),
               ),
             ),
-          ),
-
-          // 标题
-          Text(
-            isReply ? '回复 @$replyToName' : '写评论',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 12),
-
-          // 输入框
-          TextField(
-            controller: _contentController,
-            maxLines: 4,
-            minLines: 2,
-            decoration: InputDecoration(
-              hintText: '说说你的想法...',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              contentPadding: const EdgeInsets.all(12),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // 发布按钮
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _isSubmitting ? null : _submitComment,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                disabledBackgroundColor: Colors.grey[300],
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              child: _isSubmitting
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation(Colors.white),
-                      ),
-                    )
-                  : Text(
-                      '发布${isReply ? '回复' : '评论'}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
+            child: _submitting
+                ? SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(colors.paper),
                     ),
-            ),
+                  )
+                : const Text('发布评论'),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

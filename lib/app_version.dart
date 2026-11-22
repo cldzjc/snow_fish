@@ -3,8 +3,7 @@
 /// 每次发布到 Cloudflare 前手动递增，用于在管理员端确认线上是否已更新：
 ///   20261121.1 → 20261121.2 → 20261122.1 ...
 /// 只允许追加，不要回退已发布过的编号。
-const String appVersion = '20261121.2';
+const String appVersion = '20261122.1';
 
 /// 本次版本包含的主要变更，便于对照线上是否为预期版本。
-const String appVersionNote =
-    'V3.2 孤儿清理 / 详情删除 / 活动报名闭环 / 通知单项已读 / 草稿';
+const String appVersionNote = 'UI 大改造 / 设计令牌与组件库 / 双板块信息流 / 活动详情状态机';

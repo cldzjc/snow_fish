@@ -1,15 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../services/entity_service.dart';
-import '../services/comment_service.dart';
+
 import '../models/base_entity.dart';
-import '../models/media_model.dart';
+import '../services/entity_service.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
+import '../theme/app_typography.dart';
 import '../utils/time_utils.dart';
+import '../widgets/app/app_avatar.dart';
+import '../widgets/app/app_icons.dart';
+import '../widgets/app/app_state_views.dart';
+import '../widgets/app/media_strip.dart';
+import '../widgets/app/region_tag.dart';
+import 'image_gallery_page.dart';
 import 'post_detail_page.dart';
 import 'profile_page.dart';
+import 'video_player_page.dart';
 
-/// 发布成功后通知首页刷新（+1 触发）。
+/// 发布或删除后触发列表刷新（+1）。
 final ValueNotifier<int> feedRefreshTick = ValueNotifier<int>(0);
 
 class PostsListWidget extends StatefulWidget {
@@ -19,28 +27,26 @@ class PostsListWidget extends StatefulWidget {
   State<PostsListWidget> createState() => _PostsListWidgetState();
 }
 
-class _PostsListWidgetState extends State<PostsListWidget> {
+class _PostsListWidgetState extends State<PostsListWidget>
+    with AutomaticKeepAliveClientMixin {
   static const int _pageSize = 20;
 
   final EntityService _entityService = EntityService();
-  final CommentService _commentService = CommentService();
   final Map<String, Map<String, dynamic>> _profileCache = {};
-  final ScrollController _scrollController = ScrollController();
+  final Map<String, int> _likeCounts = {};
+  final Set<String> _likedIds = {};
   final Set<String> _likeInFlight = {};
+  final ScrollController _scrollController = ScrollController();
 
-  final List<BaseEntity> _posts = [];
+  final List<BaseEntity> _posts = <BaseEntity>[];
   bool _initialLoading = true;
   bool _loadingMore = false;
   bool _hasMore = true;
   bool _profilesLoading = false;
   String? _error;
 
-  void _openPostDetail(String postId) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => PostDetailPage(postId: postId)),
-    );
-  }
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -59,8 +65,7 @@ class _PostsListWidgetState extends State<PostsListWidget> {
   }
 
   void _onExternalRefresh() {
-    if (!mounted) return;
-    _refresh();
+    if (mounted) _refresh();
   }
 
   void _onScroll() {
@@ -86,7 +91,8 @@ class _PostsListWidgetState extends State<PostsListWidget> {
         _hasMore = posts.length >= _pageSize;
         _initialLoading = false;
       });
-      _loadProfiles(_posts);
+      _loadProfiles(posts);
+      _loadLikeStats(posts);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -98,6 +104,8 @@ class _PostsListWidgetState extends State<PostsListWidget> {
 
   Future<void> _refresh() async {
     _profileCache.clear();
+    _likeCounts.clear();
+    _likedIds.clear();
     await _loadInitial();
   }
 
@@ -110,13 +118,17 @@ class _PostsListWidgetState extends State<PostsListWidget> {
         offset: _posts.length,
       );
       if (!mounted) return;
+      final existing = _posts.map((item) => item.id).toSet();
+      final fresh = more.where((item) => !existing.contains(item.id)).toList();
       setState(() {
-        final existing = _posts.map((item) => item.id).toSet();
-        _posts.addAll(more.where((item) => !existing.contains(item.id)));
+        _posts.addAll(fresh);
         _hasMore = more.length >= _pageSize;
         _loadingMore = false;
       });
-      _loadProfiles(_posts);
+      if (fresh.isNotEmpty) {
+        _loadProfiles(fresh);
+        _loadLikeStats(fresh);
+      }
     } catch (_) {
       if (mounted) setState(() => _loadingMore = false);
     }
@@ -147,108 +159,101 @@ class _PostsListWidgetState extends State<PostsListWidget> {
     }
   }
 
-  Map<String, dynamic>? _profileFor(String userId) => _profileCache[userId];
-
-  Future<Map<String, int>> _getPostStats(String postId) async {
+  Future<void> _loadLikeStats(List<BaseEntity> posts) async {
+    final ids = posts.map((item) => item.id).toList();
+    if (ids.isEmpty) return;
     try {
-      final stats = await _entityService.getVoteStats(postId);
-      final commentCount = await _commentService.getCommentCount(
-        entityId: postId,
-      );
-      return {
-        'like_count': stats['like_count'] ?? 0,
-        'comment_count': commentCount,
-      };
-    } catch (e) {
-      return {'like_count': 0, 'comment_count': 0};
-    }
-  }
-
-  Future<void> _toggleLike(String postId) async {
-    if (_likeInFlight.contains(postId)) return;
-    _likeInFlight.add(postId);
-    try {
-      await _entityService.toggleVote(entityId: postId, score: 5);
+      final counts = await _entityService.fetchLikeCounts(ids);
+      final liked = await _entityService.fetchLikedEntityIds(ids);
       if (!mounted) return;
-      await _loadInitial();
+      setState(() {
+        _likeCounts.addAll(counts);
+        _likedIds.addAll(liked);
+      });
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('操作失败: $e')));
-      }
-    } finally {
-      _likeInFlight.remove(postId);
+      debugPrint('加载点赞统计失败: $e');
     }
   }
 
-  Widget _buildActionButton({
-    required IconData icon,
-    required IconData activeIcon,
-    required int count,
-    required bool isActive,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isActive ? activeIcon : icon,
-              size: 18,
-              color: isActive ? Colors.red[400] : Colors.grey[600],
-            ),
-            if (count > 0) ...[
-              const SizedBox(width: 4),
-              Text(
-                count.toString(),
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
+  Future<void> _toggleLike(BaseEntity post) async {
+    if (_likeInFlight.contains(post.id)) return;
+    _likeInFlight.add(post.id);
+    final likedBefore = _likedIds.contains(post.id);
+    final countBefore = _likeCounts[post.id] ?? 0;
+    setState(() {
+      if (likedBefore) {
+        _likedIds.remove(post.id);
+        _likeCounts[post.id] = countBefore > 0 ? countBefore - 1 : 0;
+      } else {
+        _likedIds.add(post.id);
+        _likeCounts[post.id] = countBefore + 1;
+      }
+    });
+    try {
+      await _entityService.toggleVote(entityId: post.id, score: 5);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        if (likedBefore) {
+          _likedIds.add(post.id);
+        } else {
+          _likedIds.remove(post.id);
+        }
+        _likeCounts[post.id] = countBefore;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('操作失败：$e')));
+    } finally {
+      _likeInFlight.remove(post.id);
+    }
+  }
+
+  void _openDetail(String postId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => PostDetailPage(postId: postId)),
+    );
+  }
+
+  void _openProfile(String userId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => ProfilePage(userId: userId)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+
     if (_initialLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const AppLoadingSkeleton();
     }
 
     if (_error != null && _posts.isEmpty) {
-      final msg = _error!;
-      String display = '加载失败，请稍后重试';
-      if (msg.contains('network:')) display = '网络连接失败，请检查网络';
-      if (msg.contains('permission:')) display = '权限错误：无法加载帖子';
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(display),
-            const SizedBox(height: 8),
-            ElevatedButton(onPressed: _loadInitial, child: const Text('重试')),
-          ],
-        ),
+      final message = _error!;
+      final text = message.contains('network:')
+          ? '网络连接失败，请检查网络'
+          : message.contains('permission:')
+          ? '权限不足，无法加载内容'
+          : '暂时没有加载出来';
+      return AppStateView(
+        icon: AppIcons.alert,
+        title: text,
+        description: '请检查网络后再试一次。',
+        actionLabel: '重新加载',
+        onAction: _loadInitial,
       );
     }
 
     if (_posts.isEmpty) {
       return RefreshIndicator(
         onRefresh: _refresh,
-        child: ListView(
-          children: const [
-            SizedBox(height: 120),
-            Center(child: Text('暂无帖子')),
-          ],
+        child: const AppStateView(
+          icon: AppIcons.mountain,
+          title: '还没有动态',
+          description: '留一点空白，等下一段雪上的故事。',
         ),
       );
     }
@@ -257,320 +262,253 @@ class _PostsListWidgetState extends State<PostsListWidget> {
       onRefresh: _refresh,
       child: ListView.builder(
         controller: _scrollController,
-        padding: const EdgeInsets.all(12),
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.zero,
         itemCount: _posts.length + (_hasMore ? 1 : 0),
-        itemBuilder: (context, i) {
-          if (i >= _posts.length) {
+        itemBuilder: (context, index) {
+          if (index >= _posts.length) {
             return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
+              padding: EdgeInsets.symmetric(vertical: AppSpace.xxl),
               child: Center(
                 child: SizedBox(
-                  width: 20,
-                  height: 20,
+                  width: 18,
+                  height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
             );
           }
-          return _buildPostCard(_posts[i]);
+          return _PostRow(
+            post: _posts[index],
+            profile: _profileCache[_posts[index].userId],
+            profileLoading: _profilesLoading,
+            likeCount: _likeCounts[_posts[index].id] ?? 0,
+            liked: _likedIds.contains(_posts[index].id),
+            onOpenDetail: () => _openDetail(_posts[index].id),
+            onOpenProfile: () => _openProfile(_posts[index].userId),
+            onToggleLike: () => _toggleLike(_posts[index]),
+            onOpenImage: (urls, i) => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    ImageGalleryPage(imageUrls: urls, initialIndex: i),
+              ),
+            ),
+            onOpenVideo: (media) => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => VideoPlayerPage(url: media.url),
+              ),
+            ),
+          );
         },
       ),
     );
   }
+}
 
-  Widget _buildPostCard(BaseEntity post) {
-    final media = post.media;
+class _PostRow extends StatelessWidget {
+  const _PostRow({
+    required this.post,
+    required this.profile,
+    required this.profileLoading,
+    required this.likeCount,
+    required this.liked,
+    required this.onOpenDetail,
+    required this.onOpenProfile,
+    required this.onToggleLike,
+    required this.onOpenImage,
+    required this.onOpenVideo,
+  });
+
+  final BaseEntity post;
+  final Map<String, dynamic>? profile;
+  final bool profileLoading;
+  final int likeCount;
+  final bool liked;
+  final VoidCallback onOpenDetail;
+  final VoidCallback onOpenProfile;
+  final VoidCallback onToggleLike;
+  final void Function(List<String> urls, int index) onOpenImage;
+  final void Function(dynamic media) onOpenVideo;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final nickname = (profile?['nickname'] as String?)?.trim();
+    final avatarUrl = profile?['avatar_url'] as String?;
+    final displayName = (nickname == null || nickname.isEmpty)
+        ? (profileLoading ? '加载资料…' : '雪友')
+        : nickname;
     final content = post.content ?? '';
-    final title = post.title;
+    final excerpt = content.length > 150
+        ? '${content.substring(0, 150)}…'
+        : content;
 
-    final userProfile = _profileFor(post.userId);
-    final authorName = userProfile == null
-        ? (_profilesLoading ? '加载作者资料…' : '用户')
-        : ((userProfile['nickname'] as String?)?.trim().isNotEmpty == true
-              ? userProfile['nickname'] as String
-              : '用户');
-    final authorAvatar = userProfile?['avatar_url'] as String?;
-    final residentRegion =
-        (userProfile?['resident_region'] as String?)?.trim() ?? '';
-    final residentResort =
-        (userProfile?['resident_resort'] as String?)?.trim() ?? '';
-    final locationLabel = [
-      if (residentRegion.isNotEmpty) residentRegion,
-      if (residentResort.isNotEmpty && residentResort != '暂无固定雪场')
-        residentResort,
-    ].join(' · ');
-
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => _openPostDetail(post.id),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-          child: Row(
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: colors.line)),
+      ),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpace.lg,
+        AppSpace.xl,
+        AppSpace.lg,
+        AppSpace.md,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Column(
-                children: [
-                  InkWell(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ProfilePage(userId: post.userId),
-                      ),
-                    ),
-                    child: _buildAvatar(authorAvatar, post.userId),
-                  ),
-                  Container(
-                    width: 2,
-                    height: 40,
-                    color: Colors.grey[300],
-                    margin: const EdgeInsets.symmetric(vertical: 8),
-                  ),
-                ],
+              Semantics(
+                button: true,
+                label: '查看作者主页',
+                child: GestureDetector(
+                  onTap: onOpenProfile,
+                  child: AppAvatar(url: avatarUrl),
+                ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppSpace.md),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              InkWell(
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        ProfilePage(userId: post.userId),
-                                  ),
-                                ),
-                                child: Text(
-                                  authorName,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ),
-                              Text(
-                                TimeUtils.formatRelativeTime(post.createdAt),
-                                style: TextStyle(
-                                  color: Colors.grey[600],
-                                  fontSize: 12,
-                                ),
-                              ),
-                              if (locationLabel.isNotEmpty)
-                                Text(
-                                  locationLabel,
-                                  style: TextStyle(
-                                    color: Colors.grey[600],
-                                    fontSize: 11,
-                                  ),
-                                ),
-                            ],
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onOpenProfile,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              displayName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppText.title.copyWith(color: colors.ink),
+                            ),
                           ),
+                          const SizedBox(width: AppSpace.sm),
+                          Text(
+                            TimeUtils.formatRelativeTime(post.createdAt),
+                            style: AppText.meta.copyWith(color: colors.muted),
+                          ),
+                        ],
+                      ),
+                      if (profile != null) ...[
+                        const SizedBox(height: AppSpace.xs),
+                        RegionTag(
+                          region: profile!['resident_region'] as String?,
+                          resort: profile!['resident_resort'] as String?,
                         ),
                       ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      content.length > 150
-                          ? '${content.substring(0, 150)}...'
-                          : content,
-                      style: const TextStyle(
-                        color: Colors.grey,
-                        fontSize: 14,
-                        height: 1.5,
-                      ),
-                    ),
-                    if (media.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final isMulti = media.length > 1;
-                            final imageWidth = isMulti
-                                ? constraints.maxWidth * 0.88
-                                : constraints.maxWidth;
-
-                            return ConstrainedBox(
-                              constraints: const BoxConstraints(
-                                maxHeight: 260,
-                                minHeight: 120,
-                              ),
-                              child: SizedBox(
-                                height: 220,
-                                child: Stack(
-                                  children: [
-                                    ListView.separated(
-                                      scrollDirection: Axis.horizontal,
-                                      itemCount: media.length,
-                                      separatorBuilder: (_, __) =>
-                                          const SizedBox(width: 8),
-                                      itemBuilder: (context, index) {
-                                        return ClipRRect(
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                          child: SizedBox(
-                                            width: imageWidth,
-                                            child: _buildMediaPreview(
-                                              media[index],
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                    if (isMulti)
-                                      Positioned(
-                                        right: 8,
-                                        bottom: 8,
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 4,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.black54,
-                                            borderRadius: BorderRadius.circular(
-                                              999,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            '${media.length} 图',
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    const SizedBox(height: 12),
-                    FutureBuilder<Map<String, int>>(
-                      future: _getPostStats(post.id),
-                      builder: (context, statsSnap) {
-                        final stats =
-                            statsSnap.data ??
-                            {'like_count': 0, 'comment_count': 0};
-                        return FutureBuilder<bool>(
-                          future: _entityService.hasVoted(
-                            entityId: post.id,
-                            score: 5,
-                          ),
-                          builder: (context, likedSnap) {
-                            final isLiked = likedSnap.data ?? false;
-                            return Row(
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              children: [
-                                const SizedBox(width: 8),
-                                _buildActionButton(
-                                  icon: Icons.favorite_border,
-                                  activeIcon: Icons.favorite,
-                                  count: stats['like_count']!,
-                                  isActive: isLiked,
-                                  onTap: () => _toggleLike(post.id),
-                                ),
-                                const SizedBox(width: 32),
-                                _buildActionButton(
-                                  icon: Icons.comment_outlined,
-                                  activeIcon: Icons.comment,
-                                  count: stats['comment_count']!,
-                                  isActive: false,
-                                  onTap: () => _openPostDetail(post.id),
-                                ),
-                              ],
-                            );
-                          },
-                        );
-                      },
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: AppSpace.md),
+          Padding(
+            padding: const EdgeInsets.only(left: 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onOpenDetail,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        post.title,
+                        style: AppText.title.copyWith(color: colors.ink),
+                      ),
+                      if (excerpt.isNotEmpty) ...[
+                        const SizedBox(height: AppSpace.xs),
+                        Text(
+                          excerpt,
+                          style: AppText.body.copyWith(color: colors.ink),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (post.media.isNotEmpty) ...[
+                  const SizedBox(height: AppSpace.md),
+                  MediaStrip(
+                    media: post.media,
+                    onOpenImage: onOpenImage,
+                    onOpenVideo: (media) => onOpenVideo(media),
+                  ),
+                ],
+                const SizedBox(height: AppSpace.xs),
+                Row(
+                  children: [
+                    _Action(
+                      icon: liked ? AppIcons.heartFilled : AppIcons.heart,
+                      label: likeCount > 0 ? '$likeCount' : '点赞',
+                      active: liked,
+                      onTap: onToggleLike,
+                    ),
+                    const SizedBox(width: AppSpace.xl),
+                    _Action(
+                      icon: AppIcons.comment,
+                      label: post.commentCount > 0
+                          ? '${post.commentCount}'
+                          : '评论',
+                      onTap: onOpenDetail,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
+}
 
-  Widget _buildMediaPreview(MediaModel media) {
-    final isVideo = media.mediaType == 'video';
-    final previewUrl = isVideo
-        ? (media.thumbnailUrl?.isNotEmpty == true ? media.thumbnailUrl! : null)
-        : media.url;
+class _Action extends StatelessWidget {
+  const _Action({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.active = false,
+  });
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        if (previewUrl == null)
-          Container(
-            color: Colors.grey[200],
-            child: const Icon(Icons.videocam_outlined, color: Colors.grey),
-          )
-        else
-          CachedNetworkImage(
-            imageUrl: previewUrl,
-            fit: BoxFit.cover,
-            placeholder: (c, u) => Container(color: Colors.grey[200]),
-            errorWidget: (c, u, e) => const Icon(Icons.broken_image),
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final color = active ? colors.danger : colors.muted;
+    return Semantics(
+      button: true,
+      label: label,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpace.xs,
+            vertical: AppSpace.sm,
           ),
-        if (isVideo)
-          Center(
-            child: Container(
-              padding: const EdgeInsets.all(10),
-              decoration: const BoxDecoration(
-                color: Colors.black54,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.play_arrow,
-                color: Colors.white,
-                size: 28,
-              ),
-            ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 6),
+              Text(label, style: AppText.bodySmall.copyWith(color: color)),
+            ],
           ),
-      ],
-    );
-  }
-
-  Widget _buildAvatar(String? avatarUrl, String userId) {
-    if (avatarUrl == null || avatarUrl.isEmpty) {
-      return CircleAvatar(
-        radius: 22,
-        child: _profilesLoading
-            ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.person_outline),
-      );
-    }
-    return CircleAvatar(
-      radius: 22,
-      backgroundImage: CachedNetworkImageProvider(avatarUrl),
-      onBackgroundImageError: (_, __) {},
+        ),
+      ),
     );
   }
 }

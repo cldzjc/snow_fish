@@ -161,6 +161,38 @@ class EntityService {
     return startAt.isBefore(DateTime.now());
   }
 
+  /// 批量获取实体点赞数（来自 interaction_counters）。
+  Future<Map<String, int>> fetchLikeCounts(List<String> entityIds) async {
+    if (entityIds.isEmpty) return {};
+    final rows = await _client
+        .from('interaction_counters')
+        .select('target_id, like_count')
+        .eq('target_type', 'entity')
+        .inFilter('target_id', entityIds);
+    return {
+      for (final row in rows as List)
+        row['target_id'] as String: (row['like_count'] as num?)?.toInt() ?? 0,
+    };
+  }
+
+  /// 批量判断当前用户点赞过哪些实体。
+  Future<Set<String>> fetchLikedEntityIds(List<String> entityIds) async {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null || entityIds.isEmpty) return <String>{};
+    final rows = await _client
+        .from('interactions')
+        .select('entity_id')
+        .eq('user_id', uid)
+        .eq('target_type', 'entity')
+        .inFilter('interaction_type', const [
+          'like',
+          'blog_good',
+          'product_good',
+        ])
+        .inFilter('entity_id', entityIds);
+    return (rows as List).map((row) => row['entity_id'] as String).toSet();
+  }
+
   /// 获取用户发布的实体
   Future<List<BaseEntity>> fetchUserEntities({
     required String userId,
