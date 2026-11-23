@@ -11,6 +11,7 @@ import '../services/publish_draft_store.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
+import '../widgets/app/app_avatar.dart';
 import '../widgets/app/app_button.dart';
 import '../widgets/app/app_field.dart';
 import '../widgets/app/app_icons.dart';
@@ -46,6 +47,7 @@ class _PublishPostPageState extends State<PublishPostPage> {
   List<PlatformFile> _picked = <PlatformFile>[];
   bool _loading = false;
   bool _submitted = false;
+  Map<String, dynamic>? _profile;
 
   @override
   void initState() {
@@ -79,6 +81,35 @@ class _PublishPostPageState extends State<PublishPostPage> {
         _maxController.text = draft['max_participants'] ?? '';
       }
     }
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    final fallback = _currentProfile;
+    if (fallback != null && mounted) setState(() => _profile = fallback);
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return;
+    try {
+      final row = await Supabase.instance.client
+          .from('user_profiles')
+          .select()
+          .eq('id', userId)
+          .maybeSingle();
+      if (!mounted || row == null) return;
+      setState(() => _profile = row);
+    } catch (_) {
+      // 资料读取失败时发布页不显示作者信息，不影响发布。
+    }
+  }
+
+  /// 已登录用户的最小资料（未拉到线上数据时先用登录态兜底）。
+  Map<String, dynamic>? get _currentProfile {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return null;
+    return <String, dynamic>{
+      'nickname': user.userMetadata?['nickname'] ?? '',
+      'avatar_url': user.userMetadata?['avatar_url'] ?? '',
+    };
   }
 
   @override
@@ -160,8 +191,8 @@ class _PublishPostPageState extends State<PublishPostPage> {
       }
     }
 
-    if (_contentController.text.trim().isEmpty) {
-      _toast('请填写正文');
+    if (_titleController.text.trim().isEmpty) {
+      _toast('请填写标题');
       return;
     }
 
@@ -237,9 +268,7 @@ class _PublishPostPageState extends State<PublishPostPage> {
 
     setState(() => _loading = true);
     try {
-      final title = _titleController.text.trim().isEmpty
-          ? (_isActivity ? _pageTitle.replaceFirst('发起', '') : '动态')
-          : _titleController.text.trim();
+      final title = _titleController.text.trim();
 
       final post = widget.initialPost == null
           ? await _entityService.createEntity(
@@ -313,39 +342,40 @@ class _PublishPostPageState extends State<PublishPostPage> {
       appBar: AppBar(title: Text(_pageTitle)),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(
-          AppSpace.xl,
           AppSpace.lg,
-          AppSpace.xl,
+          AppSpace.lg,
+          AppSpace.lg,
           AppSpace.xxxl,
         ),
         children: [
-          Text(
-            _isActivity ? '把时间地点说清楚，雪友就能报名。' : '分享此刻的雪上日常。',
-            style: AppText.bodySmall.copyWith(color: colors.muted),
+          _buildAuthorRow(),
+          const SizedBox(height: AppSpace.md),
+          AppTextField(
+            controller: _titleController,
+            hint: _isActivity ? '这次想约什么？' : '给这条动态起个标题',
+            style: AppText.display.copyWith(color: colors.ink),
+            maxLength: 60,
+            borderless: true,
+            minLines: 1,
+            maxLines: 3,
           ),
-          const SizedBox(height: AppSpace.xl),
-          _buildMediaSection(),
+          AppTextField(
+            controller: _contentController,
+            hint: _isActivity ? '说说时间、雪况和安排…' : '有什么雪上新鲜事？',
+            minLines: 4,
+            maxLines: 12,
+            borderless: true,
+          ),
+          const SizedBox(height: AppSpace.md),
+          _buildMediaEntry(),
+          if (_picked.isNotEmpty) ...[
+            const SizedBox(height: AppSpace.md),
+            _buildPickedStrip(),
+          ],
           if (_existingMedia.isNotEmpty) ...[
-            const SizedBox(height: AppSpace.xl),
+            const SizedBox(height: AppSpace.md),
             _buildExistingMedia(),
           ],
-          const SizedBox(height: AppSpace.xl),
-          AppField(
-            label: '标题',
-            note: '可选',
-            child: AppTextField(controller: _titleController, hint: '给这一刻起个名字'),
-          ),
-          const SizedBox(height: AppSpace.lg),
-          AppField(
-            label: '正文',
-            requiredMark: true,
-            child: AppTextField(
-              controller: _contentController,
-              hint: _isActivity ? '说说这次活动的安排…' : '有什么雪上新鲜事？',
-              minLines: 5,
-              maxLines: 10,
-            ),
-          ),
           if (_isActivity) ...[
             const SizedBox(height: AppSpace.xxl),
             Divider(color: colors.line, height: 1),
@@ -405,7 +435,7 @@ class _PublishPostPageState extends State<PublishPostPage> {
               ),
             ),
           ],
-          const SizedBox(height: AppSpace.xxxl),
+          const SizedBox(height: AppSpace.xxl),
           AppButton(
             label: widget.initialPost == null ? '发布' : '保存修改',
             expand: true,
@@ -423,88 +453,73 @@ class _PublishPostPageState extends State<PublishPostPage> {
     );
   }
 
-  Widget _buildMediaSection() {
+  /// 头像 + 昵称：和帖子卡片里的作者信息保持一致。
+  Widget _buildAuthorRow() {
     final colors = context.colors;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final nickname = (_profile?['nickname'] as String?)?.trim();
+    final name = (nickname == null || nickname.isEmpty)
+        ? (_isLoggedIn ? '雪友' : '未登录')
+        : nickname;
+    return Row(
       children: [
-        Row(
-          children: [
-            Text('图片 / 视频', style: AppText.label.copyWith(color: colors.muted)),
-            const SizedBox(width: AppSpace.sm),
-            Text(
-              '最多 9 个',
-              style: AppText.caption.copyWith(color: colors.muted),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpace.sm),
-        if (_picked.isEmpty)
-          Semantics(
-            button: true,
-            label: '选择图片或视频',
-            child: InkWell(
-              borderRadius: BorderRadius.circular(AppRadius.lg),
-              onTap: _pickMedia,
-              child: Container(
-                height: 120,
-                decoration: BoxDecoration(
-                  border: Border.all(color: colors.line),
-                  borderRadius: BorderRadius.circular(AppRadius.lg),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(AppIcons.image, size: 22, color: colors.muted),
-                    const SizedBox(height: AppSpace.sm),
-                    Text(
-                      '点击选择图片或视频',
-                      style: AppText.bodySmall.copyWith(color: colors.muted),
-                    ),
-                  ],
-                ),
+        AppAvatar(url: _profile?['avatar_url'] as String?),
+        const SizedBox(width: AppSpace.md),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(name, style: AppText.title.copyWith(color: colors.ink)),
+              const SizedBox(height: AppSpace.xs),
+              Text(
+                _isActivity ? '发起活动会通知到同地区的雪友' : '发布到 sk社区，所有人可见',
+                style: AppText.caption.copyWith(color: colors.muted),
               ),
-            ),
-          )
-        else
-          SizedBox(
-            height: 96,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: _picked.length + 1,
-              separatorBuilder: (_, __) => const SizedBox(width: AppSpace.sm),
-              itemBuilder: (context, index) {
-                if (index == _picked.length) {
-                  return Semantics(
-                    button: true,
-                    label: '继续添加',
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                      onTap: _pickMedia,
-                      child: Container(
-                        width: 96,
-                        decoration: BoxDecoration(
-                          border: Border.all(color: colors.line),
-                          borderRadius: BorderRadius.circular(AppRadius.md),
-                        ),
-                        child: Icon(
-                          AppIcons.plus,
-                          size: 20,
-                          color: colors.muted,
-                        ),
-                      ),
-                    ),
-                  );
-                }
-                final file = _picked[index];
-                return _PickedTile(
-                  file: file,
-                  onRemove: () => setState(() => _picked.removeAt(index)),
-                );
-              },
-            ),
+            ],
           ),
+        ),
       ],
+    );
+  }
+
+  /// 媒体入口：一行图标，和 Threads 的发布条一致。
+  Widget _buildMediaEntry() {
+    final colors = context.colors;
+    return Row(
+      children: [
+        _MediaEntryButton(
+          icon: AppIcons.image,
+          label: '图片',
+          onTap: _picked.length >= 9 ? null : _pickMedia,
+        ),
+        _MediaEntryButton(
+          icon: AppIcons.video,
+          label: '视频',
+          onTap: _picked.length >= 9 ? null : _pickMedia,
+        ),
+        const Spacer(),
+        Text(
+          _picked.isEmpty ? '最多 9 个' : '${_picked.length} / 9',
+          style: AppText.caption.copyWith(color: colors.muted),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPickedStrip() {
+    return SizedBox(
+      height: 96,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _picked.length,
+        separatorBuilder: (_, __) => const SizedBox(width: AppSpace.sm),
+        itemBuilder: (context, index) {
+          final file = _picked[index];
+          return _PickedTile(
+            file: file,
+            onRemove: () => setState(() => _picked.removeAt(index)),
+          );
+        },
+      ),
     );
   }
 
@@ -534,6 +549,46 @@ class _PublishPostPageState extends State<PublishPostPage> {
           ],
         ),
       ],
+    );
+  }
+}
+
+class _MediaEntryButton extends StatelessWidget {
+  const _MediaEntryButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final color = onTap == null ? colors.line : colors.muted;
+    return Semantics(
+      button: onTap != null,
+      label: '添加$label',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpace.md,
+            vertical: AppSpace.sm,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 20, color: color),
+              const SizedBox(width: 6),
+              Text(label, style: AppText.bodySmall.copyWith(color: color)),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -57,6 +57,8 @@ class AppTextField extends StatelessWidget {
     this.onChanged,
     this.autofocus = false,
     this.maxLength,
+    this.style,
+    this.borderless = false,
   });
 
   final TextEditingController? controller;
@@ -70,9 +72,22 @@ class AppTextField extends StatelessWidget {
   final bool autofocus;
   final int? maxLength;
 
+  /// 自定义正文样式（发布页的标题输入会用到更大的字号）。
+  final TextStyle? style;
+
+  /// 无外框输入，用于信息流式的发布页。
+  final bool borderless;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final textStyle = style ?? AppText.body.copyWith(color: colors.ink);
+    final border = borderless
+        ? InputBorder.none
+        : OutlineInputBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            borderSide: BorderSide(color: colors.line),
+          );
     return TextField(
       controller: controller,
       minLines: minLines,
@@ -84,9 +99,18 @@ class AppTextField extends StatelessWidget {
       autofocus: autofocus,
       maxLength: maxLength,
       cursorColor: colors.ink,
-      style: AppText.body.copyWith(color: colors.ink),
+      style: textStyle,
       decoration: InputDecoration(
         hintText: hint,
+        hintStyle: textStyle.copyWith(color: colors.muted),
+        border: border,
+        enabledBorder: border,
+        focusedBorder: borderless ? InputBorder.none : border,
+        filled: false,
+        isDense: true,
+        contentPadding: borderless
+            ? const EdgeInsets.symmetric(vertical: AppSpace.sm)
+            : const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         counterStyle: AppText.caption.copyWith(color: colors.muted),
       ),
     );

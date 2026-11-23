@@ -1,4 +1,4 @@
-﻿name: snow_fish
+name: snow_fish
 description: "A new Flutter project."
 publish_to: 'none'
 
@@ -9,6 +9,8 @@ environment:
 
 dependencies:
   flutter:
+    sdk: flutter
+  flutter_web_plugins:
     sdk: flutter
 
   # Database
@@ -35,6 +37,7 @@ dependencies:
   mime: ^1.0.2
   path: ^1.8.3
   video_thumbnail: ^0.5.0
+  share_plus: ^12.0.2
 
 dev_dependencies:
   flutter_test:
@@ -46,3 +49,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    - assets/brand/

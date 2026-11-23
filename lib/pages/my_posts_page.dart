@@ -3,12 +3,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/base_entity.dart';
 import '../services/entity_service.dart';
-import '../theme/app_colors.dart';
-import '../theme/app_spacing.dart';
-import '../theme/app_typography.dart';
-import '../utils/time_utils.dart';
 import '../widgets/app/app_icons.dart';
 import '../widgets/app/app_state_views.dart';
+import '../widgets/post_card.dart';
 import 'post_detail_page.dart';
 import 'publish_post_page.dart';
 
@@ -25,6 +22,7 @@ class _MyPostsPageState extends State<MyPostsPage> {
   bool _loading = true;
   String? _error;
   List<BaseEntity> _items = <BaseEntity>[];
+  Map<String, dynamic>? _profile;
 
   @override
   void initState() {
@@ -47,13 +45,18 @@ class _MyPostsPageState extends State<MyPostsPage> {
       _error = null;
     });
     try {
-      final items = await _entityService.fetchUserEntities(
-        userId: uid,
-        type: 'post',
-      );
+      final results = await Future.wait(<Future<dynamic>>[
+        _entityService.fetchUserEntities(userId: uid, type: 'post'),
+        Supabase.instance.client
+            .from('user_profiles')
+            .select()
+            .eq('id', uid)
+            .maybeSingle(),
+      ]);
       if (!mounted) return;
       setState(() {
-        _items = items;
+        _items = results[0] as List<BaseEntity>;
+        _profile = results[1] as Map<String, dynamic>?;
         _loading = false;
       });
     } catch (e) {
@@ -144,89 +147,17 @@ class _MyPostsPageState extends State<MyPostsPage> {
         itemCount: _items.length,
         itemBuilder: (context, index) {
           final item = _items[index];
-          return _MyPostRow(
+          return PostCard(
             post: item,
-            onOpen: () => _openDetail(item),
+            authorName: _profile?['nickname'] as String?,
+            authorAvatar: _profile?['avatar_url'] as String?,
+            region: _profile?['resident_region'] as String?,
+            resort: _profile?['resident_resort'] as String?,
+            onOpenDetail: () => _openDetail(item),
             onEdit: () => _edit(item),
             onDelete: () => _delete(item),
           );
         },
-      ),
-    );
-  }
-}
-
-class _MyPostRow extends StatelessWidget {
-  const _MyPostRow({
-    required this.post,
-    required this.onOpen,
-    required this.onEdit,
-    required this.onDelete,
-  });
-
-  final BaseEntity post;
-  final VoidCallback onOpen;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final excerpt = (post.content ?? '').trim();
-    return Container(
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: colors.line)),
-      ),
-      padding: const EdgeInsets.fromLTRB(
-        AppSpace.xl,
-        AppSpace.lg,
-        AppSpace.lg,
-        AppSpace.sm,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Semantics(
-            button: true,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onOpen,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    post.title,
-                    style: AppText.title.copyWith(color: colors.ink),
-                  ),
-                  if (excerpt.isNotEmpty) ...[
-                    const SizedBox(height: AppSpace.xs),
-                    Text(
-                      excerpt,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppText.bodySmall.copyWith(color: colors.muted),
-                    ),
-                  ],
-                  const SizedBox(height: AppSpace.sm),
-                  Text(
-                    TimeUtils.formatRelativeTime(post.createdAt),
-                    style: AppText.caption.copyWith(color: colors.muted),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Row(
-            children: [
-              TextButton(onPressed: onEdit, child: const Text('编辑')),
-              TextButton(
-                onPressed: onDelete,
-                style: TextButton.styleFrom(foregroundColor: colors.danger),
-                child: const Text('删除'),
-              ),
-            ],
-          ),
-        ],
       ),
     );
   }

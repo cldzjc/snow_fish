@@ -22,6 +22,7 @@ class AppIcons {
   static const IconData bookmark = Icons.bookmark_border_rounded;
   static const IconData bookmarkFilled = Icons.bookmark_rounded;
   static const IconData flag = Icons.flag_outlined;
+  static const IconData share = Icons.send_outlined;
 
   // 导航与通用
   static const IconData back = Icons.chevron_left_rounded;

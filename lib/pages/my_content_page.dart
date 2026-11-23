@@ -11,8 +11,10 @@ import '../utils/time_utils.dart';
 import '../widgets/app/app_icons.dart';
 import '../widgets/app/app_state_views.dart';
 import '../widgets/app/app_tabs.dart';
-import '../widgets/app/status_chip.dart';
+import '../widgets/post_card.dart';
+import 'image_gallery_page.dart';
 import 'post_detail_page.dart';
+import 'video_player_page.dart';
 
 enum MyContentKind {
   comments,
@@ -56,6 +58,11 @@ class _MyContentPageState extends State<MyContentPage> {
   List<BaseEntity> _joined = <BaseEntity>[];
   List<BaseEntity> _ended = <BaseEntity>[];
 
+  final Map<String, Map<String, dynamic>> _profiles = {};
+  final Map<String, int> _likeCounts = {};
+  final Set<String> _likedIds = {};
+  final Set<String> _likeInFlight = {};
+
   @override
   void initState() {
     super.initState();
@@ -73,6 +80,7 @@ class _MyContentPageState extends State<MyContentPage> {
           _comments = await _commentService.getMyComments();
         case MyContentKind.favorites:
           _favorites = await _loadFavorites();
+          await _loadCardContext(_favorites, withLikes: true);
         case MyContentKind.activities:
           final created = await _entityService.fetchMyCreatedActivities();
           final joined = await _entityService.fetchMyJoinedActivities();
@@ -86,6 +94,7 @@ class _MyContentPageState extends State<MyContentPage> {
           _ended = all
               .where((item) => _entityService.isActivityEnded(item))
               .toList();
+          await _loadCardContext(all, withLikes: false);
         case MyContentKind.community:
         case MyContentKind.about:
         case MyContentKind.settings:
@@ -100,6 +109,115 @@ class _MyContentPageState extends State<MyContentPage> {
         _loading = false;
       });
     }
+  }
+
+  /// 卡片需要的作者资料与点赞状态，按需一次性批量取回。
+  Future<void> _loadCardContext(
+    List<BaseEntity> entities, {
+    required bool withLikes,
+  }) async {
+    _profiles.clear();
+    _likeCounts.clear();
+    _likedIds.clear();
+    if (entities.isEmpty) return;
+    final userIds = entities.map((item) => item.userId).toSet().toList();
+    final entityIds = entities.map((item) => item.id).toList();
+    try {
+      final rows = await _client
+          .from('user_profiles')
+          .select()
+          .inFilter('id', userIds);
+      for (final row in (rows as List)) {
+        final map = Map<String, dynamic>.from(row);
+        _profiles[map['id'] as String] = map;
+      }
+    } catch (_) {
+      // 作者资料缺失不影响列表展示。
+    }
+    if (!withLikes) return;
+    try {
+      final counts = await _entityService.fetchLikeCounts(entityIds);
+      final liked = await _entityService.fetchLikedEntityIds(entityIds);
+      _likeCounts.addAll(counts);
+      _likedIds.addAll(liked);
+    } catch (_) {
+      // 点赞状态失败时退化为 0 与未点赞。
+    }
+  }
+
+  Future<void> _toggleLike(BaseEntity entity) async {
+    if (_likeInFlight.contains(entity.id)) return;
+    _likeInFlight.add(entity.id);
+    final wasLiked = _likedIds.contains(entity.id);
+    setState(() {
+      if (wasLiked) {
+        _likedIds.remove(entity.id);
+        _likeCounts[entity.id] = (_likeCounts[entity.id] ?? 1) - 1;
+      } else {
+        _likedIds.add(entity.id);
+        _likeCounts[entity.id] = (_likeCounts[entity.id] ?? 0) + 1;
+      }
+    });
+    try {
+      final liked = await _entityService.toggleVote(
+        entityId: entity.id,
+        score: 5,
+      );
+      if (!mounted) return;
+      setState(() {
+        if (liked) {
+          _likedIds.add(entity.id);
+        } else {
+          _likedIds.remove(entity.id);
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        if (wasLiked) {
+          _likedIds.add(entity.id);
+          _likeCounts[entity.id] = (_likeCounts[entity.id] ?? 0) + 1;
+        } else {
+          _likedIds.remove(entity.id);
+          _likeCounts[entity.id] = (_likeCounts[entity.id] ?? 1) - 1;
+        }
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('操作失败：$e')));
+    } finally {
+      _likeInFlight.remove(entity.id);
+    }
+  }
+
+  String _activityMetaLine(BaseEntity entity) {
+    final parts = <String>[];
+    final region = entity.extraData['region_id']?.toString().trim() ?? '';
+    final resort = entity.extraData['resort_id']?.toString().trim() ?? '';
+    final place = [region, resort].where((item) => item.isNotEmpty).join(' · ');
+    if (place.isNotEmpty) parts.add(place);
+    final start = DateTime.tryParse(
+      entity.extraData['start_at']?.toString() ?? '',
+    );
+    if (start != null) {
+      final local = start.toLocal();
+      String two(int value) => value.toString().padLeft(2, '0');
+      parts.add(
+        '${local.year}-${two(local.month)}-${two(local.day)} '
+        '${two(local.hour)}:${two(local.minute)}',
+      );
+    }
+    final max = entity.extraData['max_participants'];
+    if (max != null) parts.add('限 $max 人');
+    return parts.join(' · ');
+  }
+
+  Future<void> _openDetail(BaseEntity entity) async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => PostDetailPage(postId: entity.id)),
+    );
+    if (changed == true && mounted) await _load();
   }
 
   Future<List<BaseEntity>> _loadFavorites() async {
@@ -249,12 +367,37 @@ class _MyContentPageState extends State<MyContentPage> {
         itemCount: items.length,
         itemBuilder: (context, index) {
           final item = items[index];
-          return _EntityRow(
-            entity: item,
-            onTap: () => Navigator.push(
+          final profile = _profiles[item.userId];
+          final isActivity = item.entityType.startsWith('activity_');
+          return PostCard(
+            post: item,
+            authorName: profile?['nickname'] as String?,
+            authorAvatar: profile?['avatar_url'] as String?,
+            region: profile?['resident_region'] as String?,
+            resort: profile?['resident_resort'] as String?,
+            statusText: isActivity
+                ? (item.extraData['activity_status']?.toString() ??
+                      'recruiting')
+                : null,
+            metaLine: isActivity ? _activityMetaLine(item) : null,
+            likeCount: _likeCounts[item.id] ?? 0,
+            liked: _likedIds.contains(item.id),
+            showCommentAction: !isActivity,
+            onToggleLike: widget.kind == MyContentKind.favorites
+                ? () => _toggleLike(item)
+                : null,
+            onOpenDetail: () => _openDetail(item),
+            onOpenImage: (urls, i) => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => PostDetailPage(postId: item.id),
+                builder: (_) =>
+                    ImageGalleryPage(imageUrls: urls, initialIndex: i),
+              ),
+            ),
+            onOpenVideo: (media) => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => VideoPlayerPage(url: media.url),
               ),
             ),
           );
@@ -305,71 +448,6 @@ class _CommentRow extends StatelessWidget {
             Text(content, style: AppText.body.copyWith(color: colors.ink)),
             const SizedBox(height: AppSpace.sm),
             Text(time, style: AppText.caption.copyWith(color: colors.muted)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _EntityRow extends StatelessWidget {
-  const _EntityRow({required this.entity, required this.onTap});
-
-  final BaseEntity entity;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final isActivity = entity.entityType.startsWith('activity_');
-    final region = entity.extraData['region_id']?.toString().trim() ?? '';
-    final excerpt = (entity.content ?? '').trim();
-
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: colors.line)),
-        ),
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpace.xl,
-          vertical: AppSpace.lg,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    entity.title,
-                    style: AppText.title.copyWith(color: colors.ink),
-                  ),
-                ),
-                if (isActivity)
-                  ActivityStatusChip(
-                    status:
-                        entity.extraData['activity_status']?.toString() ??
-                        'recruiting',
-                  ),
-              ],
-            ),
-            if (excerpt.isNotEmpty) ...[
-              const SizedBox(height: AppSpace.xs),
-              Text(
-                excerpt,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: AppText.bodySmall.copyWith(color: colors.muted),
-              ),
-            ],
-            if (region.isNotEmpty) ...[
-              const SizedBox(height: AppSpace.sm),
-              Text(
-                region,
-                style: AppText.caption.copyWith(color: colors.muted),
-              ),
-            ],
           ],
         ),
       ),

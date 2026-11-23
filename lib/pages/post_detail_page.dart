@@ -6,6 +6,7 @@ import '../models/comment_model.dart';
 import '../services/entity_service.dart';
 import '../services/comment_service.dart';
 import '../services/moderation_service.dart';
+import '../services/share_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
@@ -383,6 +384,15 @@ class _PostDetailPageState extends State<PostDetailPage> {
       appBar: AppBar(
         title: Text(_isActivity ? '活动详情' : '帖子详情'),
         actions: [
+          IconButton(
+            tooltip: '分享',
+            onPressed: () {
+              final post = _post;
+              if (post == null) return;
+              ShareService.shareEntity(context, post);
+            },
+            icon: const Icon(AppIcons.share),
+          ),
           IconButton(
             tooltip: '举报',
             onPressed: () =>
