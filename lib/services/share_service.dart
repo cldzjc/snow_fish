@@ -18,8 +18,22 @@ class ShareService {
   /// 站点根地址（分享链接用，不带结尾斜杠）。
   static const String siteOrigin = 'https://skneo.club';
 
-  /// 帖子永久链接。
-  static String postUrl(String entityId) => '$siteOrigin/p/$entityId';
+  /// 短链长度：取 entity id 前 8 位十六进制。
+  ///
+  /// 8 位是 32 bit，当前体量下重复概率可以忽略；改短会明显提高撞车概率。
+  static const int shortIdLength = 8;
+
+  /// entity id → 短码（uuid 去掉横线后取前 8 位）。
+  static String shortId(String entityId) {
+    final compact = entityId.replaceAll('-', '');
+    if (compact.length <= shortIdLength) return compact;
+    return compact.substring(0, shortIdLength);
+  }
+
+  /// 帖子永久链接：https://skneo.club/<短码>
+  ///
+  /// 必须带 https:// —— 微信、QQ 等只把带协议的地址识别成可点击链接。
+  static String postUrl(String entityId) => '$siteOrigin/${shortId(entityId)}';
 
   /// 分享文案：标题一行，链接一行。
   static String postText(BaseEntity entity) {

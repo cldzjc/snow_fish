@@ -236,6 +236,32 @@ class EntityService {
     }
   }
 
+  /// 用短码（entity id 前 8 位）换出完整 id。
+  ///
+  /// 走 uuid 范围查询而不是表达式过滤，这样仍然受 RLS 约束：
+  /// 被隐藏或不可见的内容不会被解析出来。
+  Future<String?> resolveEntityIdByShortCode(String code) async {
+    final prefix = code.replaceAll('-', '').toLowerCase();
+    if (prefix.length < 6) return null;
+    final head = prefix.length > 8 ? prefix.substring(0, 8) : prefix;
+    final lower = '${head.padRight(8, '0')}-0000-0000-0000-000000000000';
+    final upper = '${head.padRight(8, 'f')}-ffff-ffff-ffff-ffffffffffff';
+    try {
+      final rows = await _client
+          .from('entities')
+          .select('id')
+          .gte('id', lower)
+          .lte('id', upper)
+          .order('created_at')
+          .limit(1);
+      if ((rows as List).isEmpty) return null;
+      return rows.first['id'] as String?;
+    } catch (e) {
+      _handleError(e);
+      return null;
+    }
+  }
+
   /// 获取特定类型和位置的实体（用于发现页面）
   /// 例如：查找附近的商品
   Future<List<BaseEntity>> fetchEntitiesByTypeAndLocation({

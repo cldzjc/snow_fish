@@ -77,6 +77,19 @@ class PostCard extends StatelessWidget {
 
   bool get _hasMenu => onEdit != null || onDelete != null;
 
+  /// 正文若以标题开头（老数据或用户自己重复输入），摘要里去掉这段，避免重复。
+  static String _excerptWithoutTitle(BaseEntity post) {
+    final content = (post.content ?? '').trim();
+    if (content.isEmpty) return content;
+    final title = post.title.trim();
+    if (title.isEmpty) return content;
+    if (content == title) return '';
+    if (content.startsWith(title)) {
+      return content.substring(title.length).trimLeft();
+    }
+    return content;
+  }
+
   Future<void> _openMenu(BuildContext context) async {
     await showAppSheet<void>(
       context,
@@ -118,9 +131,9 @@ class PostCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final content = (post.content ?? '').trim();
     final name = authorName?.trim();
     final displayName = (name == null || name.isEmpty) ? null : name;
+    final content = _excerptWithoutTitle(post);
 
     return Container(
       decoration: BoxDecoration(

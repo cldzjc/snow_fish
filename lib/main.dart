@@ -5,9 +5,11 @@ import 'config.dart';
 import 'pages/home_tabs.dart';
 import 'pages/post_detail_page.dart';
 import 'services/deep_link.dart';
+import 'services/entity_service.dart';
 import 'theme/app_spacing.dart';
 import 'theme/app_theme.dart';
 import 'utils/url_strategy.dart' as url_strategy;
+import 'widgets/app/splash_gate.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,17 +26,18 @@ Future<void> main() async {
     }
   }
 
-  // 分享链接里的帖子 id 必须在 Flutter 接管浏览器历史之前读出，
+  // 分享链接里的短码必须在 Flutter 接管浏览器历史之前读出，
   // 否则地址会被规范化成 "/"。
-  final sharedPostId = DeepLink.initialPostId;
+  final sharedPostKey = DeepLink.initialPostKey;
 
-  runApp(MyApp(initialPostId: sharedPostId));
+  runApp(MyApp(initialPostKey: sharedPostKey));
 }
 
 class MyApp extends StatefulWidget {
-  const MyApp({super.key, this.initialPostId});
+  const MyApp({super.key, this.initialPostKey});
 
-  final String? initialPostId;
+  /// 分享链接里的帖子短码或完整 uuid。
+  final String? initialPostKey;
 
   @override
   State<MyApp> createState() => _MyAppState();
@@ -42,6 +45,9 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  final GlobalKey<ScaffoldMessengerState> _messengerKey =
+      GlobalKey<ScaffoldMessengerState>();
+  final EntityService _entityService = EntityService();
 
   @override
   void initState() {
@@ -49,16 +55,30 @@ class _MyAppState extends State<MyApp> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _openSharedLink());
   }
 
-  /// 打开分享链接 https://skneo.club/p/<entity_id> 时直接进入帖子详情。
-  void _openSharedLink() {
-    final postId = widget.initialPostId;
-    if (postId == null) return;
-    _navigatorKey.currentState?.push(
-      MaterialPageRoute<void>(builder: (_) => PostDetailPage(postId: postId)),
+  /// 打开分享链接 https://skneo.club/<短码> 时直接进入帖子详情。
+  Future<void> _openSharedLink() async {
+    final key = widget.initialPostKey;
+    if (key == null) return;
+    var entityId = DeepLink.asFullUuid(key);
+    entityId ??= await _entityService.resolveEntityIdByShortCode(key);
+    if (!mounted) return;
+    final navigator = _navigatorKey.currentState;
+    if (navigator == null) return;
+    if (entityId == null) {
+      // 内容已删除或被隐藏：留在首页并给出提示。
+      _messengerKey.currentState?.showSnackBar(
+        const SnackBar(content: Text('这条内容已经不存在了')),
+      );
+      return;
+    }
+    navigator.push(
+      MaterialPageRoute<void>(
+        builder: (_) => PostDetailPage(postId: entityId!),
+      ),
     );
     // 把地址栏还原成分享链接，避免被规范化成 "/"。
     SystemNavigator.routeInformationUpdated(
-      uri: Uri.parse('/p/$postId'),
+      uri: Uri.parse('/$key'),
       replace: true,
     );
   }
@@ -69,6 +89,7 @@ class _MyAppState extends State<MyApp> {
       title: 'skneo · 雪鱼社区',
       debugShowCheckedModeBanner: false,
       navigatorKey: _navigatorKey,
+      scaffoldMessengerKey: _messengerKey,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.system,
@@ -84,7 +105,7 @@ class _MyAppState extends State<MyApp> {
           ),
         );
       },
-      home: const HomeTabs(),
+      home: const SplashGate(child: HomeTabs()),
     );
   }
 }
