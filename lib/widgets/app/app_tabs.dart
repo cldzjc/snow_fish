@@ -5,22 +5,27 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 
 /// 等分下划线 Tab。
+///
+/// 文案小一号、下划线只画在文字宽度上，视觉更轻，给内容让出空间。
 class AppTabs extends StatelessWidget {
   const AppTabs({
     super.key,
     required this.tabs,
     required this.index,
     required this.onChanged,
+    this.height = 42,
   });
 
   final List<String> tabs;
   final int index;
   final ValueChanged<int> onChanged;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return Container(
+      height: height,
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: colors.line)),
       ),
@@ -33,23 +38,33 @@ class AppTabs extends StatelessWidget {
                 button: true,
                 child: InkWell(
                   onTap: () => onChanged(i),
-                  child: Container(
-                    height: 46,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(
-                          color: i == index ? colors.ink : Colors.transparent,
-                          width: 2,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Spacer(),
+                      Text(
+                        tabs[i],
+                        style: AppText.label.copyWith(
+                          fontSize: 14,
+                          fontWeight: i == index
+                              ? FontWeight.w700
+                              : FontWeight.w400,
+                          color: i == index ? colors.ink : colors.muted,
                         ),
                       ),
-                    ),
-                    child: Text(
-                      tabs[i],
-                      style: AppText.tab.copyWith(
-                        color: i == index ? colors.ink : colors.muted,
+                      const SizedBox(height: 6),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        curve: Curves.easeOut,
+                        height: 2.5,
+                        width: i == index ? 20 : 0,
+                        decoration: BoxDecoration(
+                          color: colors.ink,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 4),
+                    ],
                   ),
                 ),
               ),

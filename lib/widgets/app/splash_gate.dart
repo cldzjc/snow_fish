@@ -24,7 +24,6 @@ class _SplashGateState extends State<SplashGate> {
 
   bool _assetReady = false;
   bool _visible = false;
-
   @override
   void initState() {
     super.initState();
@@ -68,14 +67,22 @@ class _SplashGateState extends State<SplashGate> {
               child: ColoredBox(
                 color: colors.paper,
                 child: Center(
-                  child: SizedBox(
-                    width: 180,
-                    height: 180,
-                    child: Lottie.asset(
-                      SplashGate.assetPath,
-                      repeat: false,
-                      fit: BoxFit.contain,
-                    ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final size = (constraints.maxWidth * 0.68).clamp(
+                        0.0,
+                        420.0,
+                      );
+                      return SizedBox(
+                        width: size,
+                        height: size,
+                        child: Lottie.asset(
+                          SplashGate.assetPath,
+                          repeat: false,
+                          fit: BoxFit.contain,
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),

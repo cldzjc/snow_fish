@@ -3,7 +3,7 @@
 /// 每次发布到 Cloudflare 前手动递增，用于在管理员端确认线上是否已更新：
 ///   20261121.1 → 20261121.2 → 20261122.1 ...
 /// 只允许追加，不要回退已发布过的编号。
-const String appVersion = '20261124.1';
+const String appVersion = '20261124.2';
 
 /// 本次版本包含的主要变更，便于对照线上是否为预期版本。
-const String appVersionNote = 'Lottie 开屏 / 顶栏品牌 logo / Threads 式手势下拉刷新';
+const String appVersionNote = '灰色底字笔迹 / 沉浸式滚动 / 首页头像顶栏 / 精简 Tab';

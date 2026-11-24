@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../theme/app_spacing.dart';
 import '../widgets/app/app_bottom_nav.dart';
+import '../widgets/app/immersive.dart';
 import 'activity_list_widget.dart';
 import 'home_page.dart';
 import 'login_page.dart';
@@ -81,6 +82,7 @@ class _HomeTabsState extends State<HomeTabs> {
     }
     final next = _navSlots.indexOf(slot);
     if (next < 0 || next == _stackIndex) return;
+    immersiveHidden.value = false;
     setState(() => _stackIndex = next);
   }
 
@@ -96,16 +98,19 @@ class _HomeTabsState extends State<HomeTabs> {
 
     return Scaffold(
       body: IndexedStack(index: _stackIndex, children: pages),
-      bottomNavigationBar: ValueListenableBuilder<int>(
-        valueListenable: notificationUnreadCount,
-        builder: (context, unread, _) => SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: AppSpace.xs),
-            child: AppBottomNav(
-              selected: _navSlots[_stackIndex],
-              onSelect: _onSelect,
-              unread: unread,
+      bottomNavigationBar: ImmersiveHide(
+        alignment: Alignment.topCenter,
+        child: ValueListenableBuilder<int>(
+          valueListenable: notificationUnreadCount,
+          builder: (context, unread, _) => SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: AppSpace.xs),
+              child: AppBottomNav(
+                selected: _navSlots[_stackIndex],
+                onSelect: _onSelect,
+                unread: unread,
+              ),
             ),
           ),
         ),

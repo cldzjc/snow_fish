@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'immersive.dart';
+
 /// 手势驱动的下拉刷新（Threads 式）。
 ///
 /// 品牌 logo 固定在顶部不动，由外部 [controller] 驱动：
@@ -119,6 +121,7 @@ class _LottiePullRefreshState extends State<LottiePullRefresh>
 
   bool _onScrollNotification(ScrollNotification notification) {
     if (!widget.enabled || notification.depth != 0) return false;
+    reportImmersiveScroll(notification);
     if (_refreshing) return false;
 
     if (notification is ScrollStartNotification) {
