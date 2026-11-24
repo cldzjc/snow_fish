@@ -20,10 +20,10 @@ class ActivityListWidget extends StatefulWidget {
   const ActivityListWidget({super.key});
 
   @override
-  State<ActivityListWidget> createState() => _ActivityListWidgetState();
+  State<ActivityListWidget> createState() => ActivityListWidgetState();
 }
 
-class _ActivityListWidgetState extends State<ActivityListWidget>
+class ActivityListWidgetState extends State<ActivityListWidget>
     with AutomaticKeepAliveClientMixin {
   static final List<AppOption<String>> _regionOptions = <AppOption<String>>[
     const AppOption<String>('', '全部地区'),
@@ -63,10 +63,13 @@ class _ActivityListWidgetState extends State<ActivityListWidget>
   }
 
   void _onExternalRefresh() {
-    if (mounted) _load();
+    if (mounted) _load(showSkeleton: false);
   }
 
-  Future<void> _load({bool initial = false}) async {
+  /// 供首页下拉刷新调用；返回真实请求完成后的 Future。
+  Future<void> refreshNow() => _load(showSkeleton: false);
+
+  Future<void> _load({bool initial = false, bool showSkeleton = true}) async {
     if (initial) {
       // 首次进入时把常驻地区作为默认浏览地区，没有则看全部。
       final user = Supabase.instance.client.auth.currentUser;
@@ -86,7 +89,7 @@ class _ActivityListWidgetState extends State<ActivityListWidget>
     }
     if (!mounted) return;
     setState(() {
-      _loading = true;
+      if (showSkeleton) _loading = true;
       _error = null;
     });
     try {
@@ -157,29 +160,23 @@ class _ActivityListWidgetState extends State<ActivityListWidget>
       return AppStateView.error(onRetry: _load);
     }
     if (_items.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: _load,
-        child: const AppStateView(
-          icon: AppIcons.mountain,
-          title: '还没有活动',
-          description: '换个地区，或者发起一次新的相约。',
-        ),
+      return const AppStateView(
+        icon: AppIcons.mountain,
+        title: '还没有活动',
+        description: '换个地区，或者发起一次新的相约。',
       );
     }
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: ListView.separated(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.zero,
-        itemCount: _items.length,
-        separatorBuilder: (_, __) => const SizedBox.shrink(),
-        itemBuilder: (_, index) => _ActivityRow(
-          activity: _items[index],
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => PostDetailPage(postId: _items[index].id),
-            ),
+    return ListView.separated(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: EdgeInsets.zero,
+      itemCount: _items.length,
+      separatorBuilder: (_, __) => const SizedBox.shrink(),
+      itemBuilder: (_, index) => _ActivityRow(
+        activity: _items[index],
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PostDetailPage(postId: _items[index].id),
           ),
         ),
       ),

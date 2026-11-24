@@ -19,10 +19,10 @@ class PostsListWidget extends StatefulWidget {
   const PostsListWidget({super.key});
 
   @override
-  State<PostsListWidget> createState() => _PostsListWidgetState();
+  State<PostsListWidget> createState() => PostsListWidgetState();
 }
 
-class _PostsListWidgetState extends State<PostsListWidget>
+class PostsListWidgetState extends State<PostsListWidget>
     with AutomaticKeepAliveClientMixin {
   static const int _pageSize = 20;
 
@@ -71,11 +71,19 @@ class _PostsListWidgetState extends State<PostsListWidget>
     }
   }
 
-  Future<void> _loadInitial() async {
-    setState(() {
-      _initialLoading = true;
-      _error = null;
-    });
+  Future<void> _loadInitial({
+    bool showSkeleton = true,
+    bool forceProfiles = false,
+  }) async {
+    if (showSkeleton) {
+      setState(() {
+        _initialLoading = true;
+        _error = null;
+      });
+    } else {
+      // 下拉刷新时保留现有内容，避免列表闪成骨架屏。
+      setState(() => _error = null);
+    }
     try {
       final posts = await _entityService.fetchSkCommunity(limit: _pageSize);
       if (!mounted) return;
@@ -86,7 +94,7 @@ class _PostsListWidgetState extends State<PostsListWidget>
         _hasMore = posts.length >= _pageSize;
         _initialLoading = false;
       });
-      _loadProfiles(posts);
+      _loadProfiles(posts, force: forceProfiles);
       _loadLikeStats(posts);
     } catch (e) {
       if (!mounted) return;
@@ -98,11 +106,12 @@ class _PostsListWidgetState extends State<PostsListWidget>
   }
 
   Future<void> _refresh() async {
-    _profileCache.clear();
-    _likeCounts.clear();
-    _likedIds.clear();
-    await _loadInitial();
+    // 不清空作者/点赞缓存：刷新期间保持旧数据可见，取回后再覆盖。
+    await _loadInitial(showSkeleton: false, forceProfiles: true);
   }
+
+  /// 供首页下拉刷新调用；返回真实请求完成后的 Future。
+  Future<void> refreshNow() => _refresh();
 
   Future<void> _loadMore() async {
     if (_loadingMore || !_hasMore || _initialLoading) return;
@@ -129,11 +138,16 @@ class _PostsListWidgetState extends State<PostsListWidget>
     }
   }
 
-  Future<void> _loadProfiles(List<BaseEntity> posts) async {
+  Future<void> _loadProfiles(
+    List<BaseEntity> posts, {
+    bool force = false,
+  }) async {
     final userIds = posts.map((post) => post.userId).toSet().toList();
-    final missingIds = userIds
-        .where((userId) => !_profileCache.containsKey(userId))
-        .toList();
+    final missingIds = force
+        ? userIds
+        : userIds
+              .where((userId) => !_profileCache.containsKey(userId))
+              .toList();
     if (missingIds.isEmpty || !mounted) return;
 
     setState(() => _profilesLoading = true);
@@ -243,76 +257,68 @@ class _PostsListWidgetState extends State<PostsListWidget>
     }
 
     if (_posts.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: _refresh,
-        child: const AppStateView(
-          icon: AppIcons.mountain,
-          title: '还没有动态',
-          description: '留一点空白，等下一段雪上的故事。',
-        ),
+      return const AppStateView(
+        icon: AppIcons.mountain,
+        title: '还没有动态',
+        description: '留一点空白，等下一段雪上的故事。',
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: _refresh,
-      child: ListView.builder(
-        controller: _scrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.zero,
-        itemCount: _posts.length + (_hasMore ? 1 : 0),
-        itemBuilder: (context, index) {
-          if (index >= _posts.length) {
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: AppSpace.xxl),
-              child: Center(
-                child: SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-            );
-          }
-          return PostCard(
-            post: _posts[index],
-            authorName: (() {
-              final nickname =
-                  (_profileCache[_posts[index].userId]?['nickname'] as String?)
-                      ?.trim();
-              if (nickname == null || nickname.isEmpty) {
-                return _profilesLoading ? '加载资料…' : '雪友';
-              }
-              return nickname;
-            })(),
-            authorAvatar:
-                _profileCache[_posts[index].userId]?['avatar_url'] as String?,
-            region:
-                _profileCache[_posts[index].userId]?['resident_region']
-                    as String?,
-            resort:
-                _profileCache[_posts[index].userId]?['resident_resort']
-                    as String?,
-            likeCount: _likeCounts[_posts[index].id] ?? 0,
-            liked: _likedIds.contains(_posts[index].id),
-            onOpenDetail: () => _openDetail(_posts[index].id),
-            onOpenProfile: () => _openProfile(_posts[index].userId),
-            onToggleLike: () => _toggleLike(_posts[index]),
-            onOpenImage: (urls, i) => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    ImageGalleryPage(imageUrls: urls, initialIndex: i),
-              ),
-            ),
-            onOpenVideo: (media) => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => VideoPlayerPage(url: media.url),
+    return ListView.builder(
+      controller: _scrollController,
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: EdgeInsets.zero,
+      itemCount: _posts.length + (_hasMore ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index >= _posts.length) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: AppSpace.xxl),
+            child: Center(
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
               ),
             ),
           );
-        },
-      ),
+        }
+        return PostCard(
+          post: _posts[index],
+          authorName: (() {
+            final nickname =
+                (_profileCache[_posts[index].userId]?['nickname'] as String?)
+                    ?.trim();
+            if (nickname == null || nickname.isEmpty) {
+              return _profilesLoading ? '加载资料…' : '雪友';
+            }
+            return nickname;
+          })(),
+          authorAvatar:
+              _profileCache[_posts[index].userId]?['avatar_url'] as String?,
+          region:
+              _profileCache[_posts[index].userId]?['resident_region']
+                  as String?,
+          resort:
+              _profileCache[_posts[index].userId]?['resident_resort']
+                  as String?,
+          likeCount: _likeCounts[_posts[index].id] ?? 0,
+          liked: _likedIds.contains(_posts[index].id),
+          onOpenDetail: () => _openDetail(_posts[index].id),
+          onOpenProfile: () => _openProfile(_posts[index].userId),
+          onToggleLike: () => _toggleLike(_posts[index]),
+          onOpenImage: (urls, i) => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  ImageGalleryPage(imageUrls: urls, initialIndex: i),
+            ),
+          ),
+          onOpenVideo: (media) => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => VideoPlayerPage(url: media.url)),
+          ),
+        );
+      },
     );
   }
 }
