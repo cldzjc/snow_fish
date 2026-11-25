@@ -171,7 +171,7 @@ class _NotificationsPageState extends State<NotificationsPage>
       onRefresh: _load,
       child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.zero,
+        padding: const EdgeInsets.only(bottom: 92),
         itemCount: _items.length,
         itemBuilder: (context, index) {
           final item = _items[index];

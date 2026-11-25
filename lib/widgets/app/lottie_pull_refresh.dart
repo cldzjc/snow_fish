@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../services/refresh_feedback.dart';
 import 'immersive.dart';
 
 /// 手势驱动的下拉刷新（Threads 式）。
@@ -74,12 +73,6 @@ class _LottiePullRefreshState extends State<LottiePullRefresh>
   bool _dragging = false;
   bool _refreshing = false;
 
-  /// 本次下拉已经响过反馈（避免同一手势重复震动/发声）。
-  bool _armed = false;
-
-  /// 已经震动到第几档。
-  int _tickStep = 0;
-
   /// refresh.json 中「完全擦除」的进度点，下拉阶段只走到这里。
   static const double _eraseAnchor = 0.44;
 
@@ -87,7 +80,6 @@ class _LottiePullRefreshState extends State<LottiePullRefresh>
   void initState() {
     super.initState();
     _gapAnim.addListener(_onGapTick);
-    RefreshFeedback.instance.prepare();
   }
 
   @override
@@ -125,28 +117,8 @@ class _LottiePullRefreshState extends State<LottiePullRefresh>
     widget.controller
       ..stop()
       ..value = _gesture * _eraseAnchor;
-    _emitFeedback(gap);
-  }
-
-  /// 下拉过程中的触感刻度与「到位」提示。
-  void _emitFeedback(double gap) {
-    if (_gesture < 1) {
-      // 每走过 1/4 程给一次轻刻度，手感接近 Threads。
-      final step = (gap / widget.threshold * 4).floor();
-      if (step > _tickStep && step <= 3) {
-        _tickStep = step;
-        RefreshFeedback.instance.tick();
-      }
-      return;
-    }
-    if (_armed) return;
-    _armed = true;
-    RefreshFeedback.instance.armed();
-  }
-
-  void _resetFeedback() {
-    _armed = false;
-    _tickStep = 0;
+    // 拉到位就立即开始刷新，不需要松手。
+    if (_gesture >= 1) _startRefresh();
   }
 
   bool _onScrollNotification(ScrollNotification notification) {
@@ -157,7 +129,6 @@ class _LottiePullRefreshState extends State<LottiePullRefresh>
 
     if (notification is ScrollStartNotification) {
       _dragging = true;
-      _resetFeedback();
       _gapAnim.stop();
       return false;
     }
@@ -217,11 +188,13 @@ class _LottiePullRefreshState extends State<LottiePullRefresh>
     _animateGap(0, duration: widget.settleDuration);
   }
 
+  /// 拉到位立即触发：先跑到阈值锁定位置，再自动播放重绘并刷新。
   Future<void> _startRefresh() async {
+    if (_refreshing) return;
     setState(() => _refreshing = true);
     _gesture = 1;
-    RefreshFeedback.instance.trigger();
-    _animateGap(widget.holdHeight, duration: const Duration(milliseconds: 160));
+    widget.controller.stop();
+    _animateGap(widget.threshold, duration: const Duration(milliseconds: 120));
 
     final redraw = widget.controller
         .animateTo(1, duration: widget.redrawDuration, curve: Curves.easeInOut)

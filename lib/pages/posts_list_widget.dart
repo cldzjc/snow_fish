@@ -111,7 +111,11 @@ class PostsListWidgetState extends State<PostsListWidget>
   }
 
   /// 供首页下拉刷新调用；返回真实请求完成后的 Future。
-  Future<void> refreshNow() => _refresh();
+  /// 供首页下拉刷新调用；返回刷新后的条数，用于提示。
+  Future<int> refreshNow() async {
+    await _refresh();
+    return _posts.length;
+  }
 
   Future<void> _loadMore() async {
     if (_loadingMore || !_hasMore || _initialLoading) return;
@@ -267,7 +271,7 @@ class PostsListWidgetState extends State<PostsListWidget>
     return ListView.builder(
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: EdgeInsets.zero,
+      padding: const EdgeInsets.only(bottom: 92),
       itemCount: _posts.length + (_hasMore ? 1 : 0),
       itemBuilder: (context, index) {
         if (index >= _posts.length) {

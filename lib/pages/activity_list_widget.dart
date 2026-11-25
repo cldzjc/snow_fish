@@ -68,7 +68,11 @@ class ActivityListWidgetState extends State<ActivityListWidget>
   }
 
   /// 供首页下拉刷新调用；返回真实请求完成后的 Future。
-  Future<void> refreshNow() => _load(showSkeleton: false);
+  /// 供首页下拉刷新调用；返回刷新后的条数，用于提示。
+  Future<int> refreshNow() async {
+    await _load(showSkeleton: false);
+    return _items.length;
+  }
 
   Future<void> _load({bool initial = false, bool showSkeleton = true}) async {
     if (initial) {
@@ -170,7 +174,7 @@ class ActivityListWidgetState extends State<ActivityListWidget>
     }
     return ListView.separated(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: EdgeInsets.zero,
+      padding: const EdgeInsets.only(bottom: 92),
       itemCount: _items.length,
       separatorBuilder: (_, __) => const SizedBox.shrink(),
       itemBuilder: (_, index) => _ActivityRow(

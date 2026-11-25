@@ -215,7 +215,7 @@ class _ProfilePageState extends State<ProfilePage> {
       onRefresh: _load,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.zero,
+        padding: const EdgeInsets.only(bottom: 92),
         children: [
           _buildHeader(),
           if (_isOwn) _buildEntries(),

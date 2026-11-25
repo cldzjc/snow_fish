@@ -97,11 +97,19 @@ class _HomePageState extends State<HomePage>
     revealChrome();
   }
 
-  Future<void> _refreshCurrent() {
-    final future = _index == 1
-        ? _activityKey.currentState?.refreshNow()
-        : _postsKey.currentState?.refreshNow();
-    return future ?? Future<void>.value();
+  /// 下拉刷新当前板块，完成后提示刷新到多少条。
+  Future<void> _refreshCurrent() async {
+    final count = _index == 1
+        ? await _activityKey.currentState?.refreshNow()
+        : await _postsKey.currentState?.refreshNow();
+    if (!mounted || count == null) return;
+    final unit = _index == 1 ? '个活动' : '篇帖子';
+    final message = count == 0 ? '暂时没有新内容' : '已刷新 $count $unit';
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+      );
   }
 
   Future<void> _openLogin() async {
@@ -221,46 +229,86 @@ class _HomePageState extends State<HomePage>
 
   /// 品牌标识栏：左用户、中 logo、右常驻地点。
   ///
-  /// 左右两栏给固定宽度，中间 logo 用 Expanded 居中，
-  /// 这样任何屏幕宽度下三者都不会互相压盖。
-  static const double _sideSlot = 112;
-
+  /// 左右两栏等宽（随屏宽缩放），中间的 Expanded 就正好居中，
+  /// 屏宽再窄 logo 也只是等比缩小，不会被挤没。
   Widget _buildBrandBar() {
     return SizedBox(
       height: _brandBarHeight,
-      child: Row(
-        children: [
-          SizedBox(width: 52, child: Center(child: _buildUserChip())),
-          Expanded(
-            child: Center(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: BrandMarkLottie(controller: _brandAnim, height: 40),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final sideSlot = (constraints.maxWidth * 0.28).clamp(76.0, 108.0);
+          return Row(
+            children: [
+              SizedBox(
+                width: sideSlot,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: _buildUserChip(),
+                  ),
+                ),
               ),
-            ),
-          ),
-          SizedBox(
-            width: _sideSlot,
-            child: Center(child: _buildRegionChip()),
-          ),
-        ],
+              Expanded(
+                child: Center(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: BrandMarkLottie(controller: _brandAnim, height: 40),
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: sideSlot,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: _buildRegionChip(),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 
   Widget _buildUserChip() {
+    final colors = context.colors;
     final loggedIn = Supabase.instance.client.auth.currentUser != null;
     final avatarUrl = loggedIn ? (_profile?['avatar_url'] as String?) : null;
+    final nickname = (_profile?['nickname'] as String?)?.trim() ?? '';
+    final name = loggedIn ? (nickname.isEmpty ? '雪友' : nickname) : '登录';
 
     return Semantics(
       button: true,
-      label: loggedIn ? '我的主页' : '登录',
+      label: loggedIn ? '$name 的主页' : '登录',
       child: InkWell(
         borderRadius: BorderRadius.circular(999),
         onTap: loggedIn ? _openMyProfile : _openLogin,
         child: Padding(
-          padding: const EdgeInsets.only(left: 6, right: 4),
-          child: AppAvatar(url: avatarUrl, size: 32),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppAvatar(url: avatarUrl, size: 30),
+              const SizedBox(width: 6),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 58),
+                child: Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: colors.ink,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -291,8 +339,8 @@ class _HomePageState extends State<HomePage>
             mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(
-                width: 18,
-                height: 12,
+                width: 30,
+                height: 18,
                 child: SvgPicture.asset(
                   'assets/brand/icon_region.svg',
                   fit: BoxFit.contain,

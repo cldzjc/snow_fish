@@ -5,9 +5,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import 'app_button.dart';
-import 'app_field.dart';
 import 'app_icons.dart';
-import 'app_sheet.dart';
 
 /// 选择结果：省 / 市 / 区路径 + 雪场。
 class GeoSelection {
@@ -27,29 +25,11 @@ class GeoSelection {
   }
 }
 
-/// 打开级联地区选择面板。
-Future<GeoSelection?> showGeoPicker(
-  BuildContext context, {
-  required String title,
-  String? initialRegion,
-  String? initialResort,
-}) {
-  return showAppSheet<GeoSelection>(
-    context,
-    title: title,
-    builder: (_) => _GeoPickerBody(
-      initialRegion: initialRegion,
-      initialResort: initialResort,
-    ),
-  );
-}
-
 /// 把已存路径拆回省 / 市 / 区。
 List<String> splitRegionPath(String? path) {
   final value = path?.trim() ?? '';
-  final geo = GeoRepository.instance;
   if (value.isEmpty) return const <String>[];
-  // 省份内部本身带「·」的情况（例如「北京·北京」）按实际数据切分。
+  final geo = GeoRepository.instance;
   for (final province in geo.provinces) {
     if (value == province.name) return <String>[province.name];
     if (value.startsWith('${province.name}·')) {
@@ -57,6 +37,37 @@ List<String> splitRegionPath(String? path) {
     }
   }
   return value.split('·');
+}
+
+/// 去掉「某某滑雪场」里的「滑雪场」后缀，只留场地名。
+String shortResortName(String value) {
+  var name = value.trim();
+  for (final suffix in const <String>['滑雪场', '滑雪度假区', '滑雪胜地']) {
+    if (name.length > suffix.length && name.endsWith(suffix)) {
+      name = name.substring(0, name.length - suffix.length).trim();
+      break;
+    }
+  }
+  return name;
+}
+
+/// 打开级联地区选择面板（左栏分类 + 右侧选项）。
+Future<GeoSelection?> showGeoPicker(
+  BuildContext context, {
+  required String title,
+  String? initialRegion,
+  String? initialResort,
+}) {
+  return showModalBottomSheet<GeoSelection>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _GeoPickerSheet(
+      title: title,
+      initialRegion: initialRegion,
+      initialResort: initialResort,
+    ),
+  );
 }
 
 /// 表单里的「常驻地区」字段：显示当前值，点击打开级联选择。
@@ -79,7 +90,7 @@ class RegionField extends StatelessWidget {
     final parts = <String>[
       if (region.trim().isNotEmpty) region.trim(),
       if (resort.trim().isNotEmpty && resort.trim() != geo.noFixedResort)
-        resort.trim(),
+        shortResortName(resort),
     ];
     final label = parts.isEmpty ? '选择省份 / 城市 / 区县' : parts.join('·');
 
@@ -125,23 +136,31 @@ class RegionField extends StatelessWidget {
   }
 }
 
-class _GeoPickerBody extends StatefulWidget {
-  const _GeoPickerBody({this.initialRegion, this.initialResort});
+enum _GeoStep { province, city, district, resort }
 
+class _GeoPickerSheet extends StatefulWidget {
+  const _GeoPickerSheet({
+    required this.title,
+    this.initialRegion,
+    this.initialResort,
+  });
+
+  final String title;
   final String? initialRegion;
   final String? initialResort;
 
   @override
-  State<_GeoPickerBody> createState() => _GeoPickerBodyState();
+  State<_GeoPickerSheet> createState() => _GeoPickerSheetState();
 }
 
-class _GeoPickerBodyState extends State<_GeoPickerBody> {
+class _GeoPickerSheetState extends State<_GeoPickerSheet> {
   final GeoRepository _geo = GeoRepository.instance;
 
   String _province = '';
   String _city = '';
   String _district = '';
   String _resort = '';
+  _GeoStep _step = _GeoStep.province;
 
   @override
   void initState() {
@@ -152,6 +171,14 @@ class _GeoPickerBodyState extends State<_GeoPickerBody> {
     if (parts.length > 2) _district = parts[2];
     _resort = (widget.initialResort ?? '').trim();
     if (_resort.isEmpty) _resort = _geo.noFixedResort;
+    // 有历史值时从最后一级开始看，方便直接改。
+    if (_district.isNotEmpty) {
+      _step = _GeoStep.resort;
+    } else if (_city.isNotEmpty) {
+      _step = _GeoStep.district;
+    } else if (_province.isNotEmpty) {
+      _step = _GeoStep.city;
+    }
   }
 
   GeoProvince? get _currentProvince {
@@ -165,115 +192,414 @@ class _GeoPickerBodyState extends State<_GeoPickerBody> {
 
   GeoDistrict? get _currentDistrict => _currentCity?.district(_district);
 
-  List<String> get _districts => _currentCity?.districtNames ?? const [];
+  List<String> _optionsOf(_GeoStep step) {
+    switch (step) {
+      case _GeoStep.province:
+        return _geo.provinceNames;
+      case _GeoStep.city:
+        return _currentProvince?.cityNames ?? const <String>[];
+      case _GeoStep.district:
+        return _currentCity?.districtNames ?? const <String>[];
+      case _GeoStep.resort:
+        final resorts = _currentDistrict?.resorts ?? const <String>[];
+        return <String>[_geo.noFixedResort, ...resorts];
+    }
+  }
 
-  List<String> get _resortOptions {
-    final resorts = _currentDistrict?.resorts ?? const <String>[];
-    return <String>[_geo.noFixedResort, ...resorts];
+  String _valueOf(_GeoStep step) {
+    switch (step) {
+      case _GeoStep.province:
+        return _province;
+      case _GeoStep.city:
+        return _city;
+      case _GeoStep.district:
+        return _district;
+      case _GeoStep.resort:
+        return _resort;
+    }
+  }
+
+  void _select(_GeoStep step, String value) {
+    setState(() {
+      switch (step) {
+        case _GeoStep.province:
+          _province = value;
+          _city = '';
+          _district = '';
+          _resort = _geo.noFixedResort;
+          _step = _GeoStep.city;
+        case _GeoStep.city:
+          _city = value;
+          _district = '';
+          _resort = _geo.noFixedResort;
+          _step = _GeoStep.district;
+        case _GeoStep.district:
+          _district = value;
+          _resort = _geo.noFixedResort;
+          _step = _GeoStep.resort;
+        case _GeoStep.resort:
+          _resort = value;
+      }
+    });
+    // 下一级还有内容就自动推进，否则停在当前让用户确认。
+    final next = _nextStep(step);
+    if (next != null && _optionsOf(next).isNotEmpty) {
+      setState(() => _step = next);
+    }
+  }
+
+  _GeoStep? _nextStep(_GeoStep step) {
+    switch (step) {
+      case _GeoStep.province:
+        return _GeoStep.city;
+      case _GeoStep.city:
+        return _GeoStep.district;
+      case _GeoStep.district:
+        return _GeoStep.resort;
+      case _GeoStep.resort:
+        return null;
+    }
+  }
+
+  String _label(_GeoStep step) {
+    switch (step) {
+      case _GeoStep.province:
+        return '省份';
+      case _GeoStep.city:
+        return '城市';
+      case _GeoStep.district:
+        return '区县';
+      case _GeoStep.resort:
+        return '雪场';
+    }
+  }
+
+  String _summary(_GeoStep step) {
+    final value = _valueOf(step);
+    if (value.isEmpty) return '请选择';
+    return step == _GeoStep.resort ? shortResortName(value) : value;
   }
 
   bool get _canConfirm => _province.isNotEmpty;
 
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    final provinceOptions = _geo.provinces
-        .map((item) => AppOption<String>(item.name, item.name))
-        .toList();
-    final cityOptions = (_currentProvince?.cityNames ?? const <String>[])
-        .map((item) => AppOption<String>(item, item))
-        .toList();
-    final districtOptions = _districts
-        .map((item) => AppOption<String>(item, item))
-        .toList();
-    final resortOptions = _resortOptions
-        .map((item) => AppOption<String>(item, item))
-        .toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        AppField(
-          label: '省份',
-          requiredMark: true,
-          child: AppDropdown<String>(
-            options: provinceOptions,
-            value: _province.isEmpty ? null : _province,
-            hint: '请选择省份',
-            onChanged: (value) => setState(() {
-              _province = value ?? '';
-              _city = '';
-              _district = '';
-              _resort = _geo.noFixedResort;
-            }),
-          ),
-        ),
-        if (cityOptions.isNotEmpty) ...[
-          const SizedBox(height: AppSpace.lg),
-          AppField(
-            label: '城市',
-            child: AppDropdown<String>(
-              options: cityOptions,
-              value: _city.isEmpty ? null : _city,
-              hint: '请选择城市',
-              onChanged: (value) => setState(() {
-                _city = value ?? '';
-                _district = '';
-                _resort = _geo.noFixedResort;
-              }),
-            ),
-          ),
-        ],
-        if (districtOptions.isNotEmpty) ...[
-          const SizedBox(height: AppSpace.lg),
-          AppField(
-            label: '区县',
-            child: AppDropdown<String>(
-              options: districtOptions,
-              value: _district.isEmpty ? null : _district,
-              hint: '请选择区县',
-              onChanged: (value) => setState(() {
-                _district = value ?? '';
-                _resort = _geo.noFixedResort;
-              }),
-            ),
-          ),
-        ],
-        const SizedBox(height: AppSpace.lg),
-        AppField(
-          label: '常驻雪场',
-          note: '没有固定雪场就选「${_geo.noFixedResort}」',
-          child: AppDropdown<String>(
-            options: resortOptions,
-            value: _resortOptions.contains(_resort)
-                ? _resort
-                : _geo.noFixedResort,
-            onChanged: (value) =>
-                setState(() => _resort = value ?? _geo.noFixedResort),
-          ),
-        ),
-        const SizedBox(height: AppSpace.sm),
-        Text(
-          _canConfirm ? '将保存为：${_preview()}' : '至少需要选择省份，地区是你在社区里的身份标签。',
-          style: AppText.caption.copyWith(color: colors.muted),
-        ),
-        const SizedBox(height: AppSpace.xl),
-        AppButton(
-          label: '确定',
-          expand: true,
-          onPressed: _canConfirm ? _confirm : null,
-        ),
-      ],
-    );
-  }
-
-  String _preview() {
+  String get _preview {
     final region = GeoRepository.joinPath(_province, _city, _district);
     return GeoSelection(region: region, resort: _resort).display;
+  }
+
+  void _clear() {
+    setState(() {
+      _province = '';
+      _city = '';
+      _district = '';
+      _resort = _geo.noFixedResort;
+      _step = _GeoStep.province;
+    });
   }
 
   void _confirm() {
     final region = GeoRepository.joinPath(_province, _city, _district);
     Navigator.of(context).pop(GeoSelection(region: region, resort: _resort));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final options = _optionsOf(_step);
+    final selected = _valueOf(_step);
+    final height = MediaQuery.sizeOf(context).height * 0.82;
+
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        color: colors.paper,
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(AppRadius.sheet),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            // 顶部拖拽条 + 标题
+            const SizedBox(height: AppSpace.md),
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: colors.line,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpace.xl,
+                AppSpace.lg,
+                AppSpace.sm,
+                AppSpace.md,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.title,
+                      style: AppText.pageTitle.copyWith(color: colors.ink),
+                    ),
+                  ),
+                  Semantics(
+                    button: true,
+                    label: '关闭',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(999),
+                      onTap: () => Navigator.of(context).maybePop(),
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: colors.soft,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          AppIcons.close,
+                          size: 17,
+                          color: colors.muted,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: colors.line),
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildRail(colors),
+                  VerticalDivider(width: 1, color: colors.line),
+                  Expanded(
+                    child: options.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(AppSpace.xl),
+                              child: Text(
+                                '上一级还没有可选内容，先选上一级吧',
+                                textAlign: TextAlign.center,
+                                style: AppText.bodySmall.copyWith(
+                                  color: colors.muted,
+                                ),
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            itemCount: options.length,
+                            itemBuilder: (context, index) {
+                              final option = options[index];
+                              final active = option == selected;
+                              final text = _step == _GeoStep.resort
+                                  ? shortResortName(option)
+                                  : option;
+                              return _OptionRow(
+                                label: text,
+                                active: active,
+                                isResort: _step == _GeoStep.resort,
+                                onTap: () => _select(_step, option),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: colors.line),
+            // 底部固定操作区，永远在屏幕内
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpace.lg,
+                AppSpace.md,
+                AppSpace.lg,
+                AppSpace.md,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Icon(AppIcons.place, size: 14, color: colors.muted),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _canConfirm ? _preview : '至少选择省份',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.bodySmall.copyWith(
+                            color: _canConfirm ? colors.ink : colors.muted,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpace.md),
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: _canConfirm ? _clear : null,
+                        child: Text(
+                          '清除',
+                          style: AppText.button.copyWith(color: colors.muted),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpace.sm),
+                      Expanded(
+                        child: AppButton(
+                          label: '确定',
+                          expand: true,
+                          onPressed: _canConfirm ? _confirm : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRail(AppColors colors) {
+    return SizedBox(
+      width: 104,
+      child: ListView(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        children: [
+          for (final step in _GeoStep.values)
+            _RailTile(
+              label: _label(step),
+              value: _summary(step),
+              active: _step == step,
+              onTap: () => setState(() => _step = step),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RailTile extends StatelessWidget {
+  const _RailTile({
+    required this.label,
+    required this.value,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpace.md,
+          AppSpace.md,
+          8,
+          AppSpace.md,
+        ),
+        decoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(
+              color: active ? colors.ink : Colors.transparent,
+              width: 3,
+            ),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: AppText.bodySmall.copyWith(
+                color: active ? colors.ink : colors.muted,
+                fontWeight: active ? FontWeight.w700 : FontWeight.w400,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.caption.copyWith(
+                color: active
+                    ? colors.ink
+                    : colors.muted.withValues(alpha: 0.75),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OptionRow extends StatelessWidget {
+  const _OptionRow({
+    required this.label,
+    required this.active,
+    required this.isResort,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool active;
+  final bool isResort;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpace.lg,
+          vertical: AppSpace.md,
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 20,
+              child: active
+                  ? Icon(AppIcons.check, size: 17, color: colors.ink)
+                  : Icon(
+                      isResort ? AppIcons.mountain : AppIcons.chevron,
+                      size: 15,
+                      color: colors.line,
+                    ),
+            ),
+            const SizedBox(width: AppSpace.sm),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.body.copyWith(
+                  color: colors.ink,
+                  fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

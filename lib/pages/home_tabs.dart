@@ -97,6 +97,8 @@ class _HomeTabsState extends State<HomeTabs> {
     ];
 
     return Scaffold(
+      // 底部导航浮在内容之上，收起时不会留下白色占位。
+      extendBody: true,
       body: IndexedStack(index: _stackIndex, children: pages),
       bottomNavigationBar: ImmersiveHide(
         hideOffset: const Offset(0, 96),
