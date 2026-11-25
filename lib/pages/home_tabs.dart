@@ -82,7 +82,7 @@ class _HomeTabsState extends State<HomeTabs> {
     }
     final next = _navSlots.indexOf(slot);
     if (next < 0 || next == _stackIndex) return;
-    immersiveHidden.value = false;
+    revealChrome();
     setState(() => _stackIndex = next);
   }
 
@@ -99,7 +99,7 @@ class _HomeTabsState extends State<HomeTabs> {
     return Scaffold(
       body: IndexedStack(index: _stackIndex, children: pages),
       bottomNavigationBar: ImmersiveHide(
-        alignment: Alignment.topCenter,
+        hideOffset: const Offset(0, 96),
         child: ValueListenableBuilder<int>(
           valueListenable: notificationUnreadCount,
           builder: (context, unread, _) => SafeArea(

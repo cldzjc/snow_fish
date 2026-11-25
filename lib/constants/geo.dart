@@ -1,46 +1,197 @@
-/// 地区与雪场选项。
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+
+/// 省 / 市 / 区县 / 雪场 四级地区数据。
 ///
-/// 注册、编辑资料、活动发布、约约约筛选共用同一份数据，
-/// 避免各处硬编码不同的字符串导致筛选匹配不到。
+/// 数据源是 `assets/data/geo.json`，格式见该文件；改完重新构建即可生效。
+/// 如果站点根目录放了 `data/geo.json`，启动时会优先采用它，
+/// 这样上传一个新文件、刷新页面就能更新，不必重新编译 Flutter。
+class GeoRepository {
+  GeoRepository._();
+
+  static final GeoRepository instance = GeoRepository._();
+
+  static const String assetPath = 'assets/data/geo.json';
+
+  /// 站点上的可覆盖文件（相对站点根目录）。
+  static const String remotePath = 'data/geo.json';
+
+  /// 没有固定雪场时使用的占位值。
+  String noFixedResort = '暂无固定雪场';
+
+  List<GeoProvince> provinces = const <GeoProvince>[];
+
+  String version = '';
+
+  bool _loaded = false;
+
+  bool get isLoaded => _loaded;
+
+  /// 启动时调用一次。失败时保持空数据，不阻塞应用。
+  Future<void> load() async {
+    if (_loaded) return;
+    try {
+      final raw = await rootBundle.loadString(assetPath);
+      _apply(raw);
+    } catch (error) {
+      debugPrint('地区数据读取失败: $error');
+    }
+    _loaded = true;
+  }
+
+  /// 后台尝试用站点上的同名文件覆盖内置数据（仅 Web，失败静默）。
+  Future<void> refreshFromRemote() async {
+    if (!kIsWeb) return;
+    try {
+      final uri = Uri.base.resolve(remotePath);
+      if (!uri.hasScheme || !uri.isScheme('http') && !uri.isScheme('https')) {
+        return;
+      }
+      final response = await http.get(uri).timeout(const Duration(seconds: 3));
+      if (response.statusCode != 200) return;
+      _apply(response.body);
+    } catch (_) {
+      // 远端不存在或网络失败时继续使用内置数据。
+    }
+  }
+
+  void _apply(String raw) {
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map<String, dynamic>) return;
+    final nextNoFixed = (decoded['noFixedResort'] as String?)?.trim();
+    if (nextNoFixed != null && nextNoFixed.isNotEmpty) {
+      noFixedResort = nextNoFixed;
+    }
+    final list = decoded['regions'];
+    if (list is! List) return;
+    final parsed = <GeoProvince>[];
+    for (final item in list) {
+      if (item is! Map) continue;
+      final name = (item['name'] as String?)?.trim() ?? '';
+      if (name.isEmpty) continue;
+      final cities = <GeoCity>[];
+      final rawCities = item['cities'];
+      if (rawCities is List) {
+        for (final city in rawCities) {
+          if (city is! Map) continue;
+          final cityName = (city['name'] as String?)?.trim() ?? '';
+          if (cityName.isEmpty) continue;
+          final districts = <GeoDistrict>[];
+          final rawDistricts = city['districts'];
+          if (rawDistricts is List) {
+            for (final district in rawDistricts) {
+              if (district is! Map) continue;
+              final districtName = (district['name'] as String?)?.trim() ?? '';
+              if (districtName.isEmpty) continue;
+              final resorts = <String>[];
+              final rawResorts = district['resorts'];
+              if (rawResorts is List) {
+                for (final resort in rawResorts) {
+                  final value = resort?.toString().trim() ?? '';
+                  if (value.isNotEmpty) resorts.add(value);
+                }
+              }
+              districts.add(GeoDistrict(name: districtName, resorts: resorts));
+            }
+          }
+          cities.add(GeoCity(name: cityName, districts: districts));
+        }
+      }
+      parsed.add(GeoProvince(name: name, cities: cities));
+    }
+    if (parsed.isEmpty) return;
+    provinces = List<GeoProvince>.unmodifiable(parsed);
+    version = (decoded['version'] as String?)?.trim() ?? '';
+  }
+
+  /// 省份名列表（活动筛选、旧数据兼容用）。
+  List<String> get provinceNames =>
+      provinces.map((item) => item.name).toList(growable: false);
+
+  /// 全部雪场名（扁平，含「暂无固定雪场」）。
+  List<String> get allResorts {
+    final seen = <String>{noFixedResort};
+    for (final province in provinces) {
+      for (final city in province.cities) {
+        for (final district in city.districts) {
+          seen.addAll(district.resorts);
+        }
+      }
+    }
+    return seen.toList(growable: false);
+  }
+
+  /// 从「省·市·区」路径里取省份，用于活动筛选。
+  String provinceOf(String? regionPath) {
+    final value = regionPath?.trim() ?? '';
+    if (value.isEmpty) return '';
+    final head = value.split('·').first.trim();
+    return provinceNames.contains(head) ? head : '';
+  }
+
+  /// 把三级行政区拼成存储路径。
+  static String joinPath(String province, String city, String district) {
+    return <String>[
+      province.trim(),
+      city.trim(),
+      district.trim(),
+    ].where((item) => item.isNotEmpty).join('·');
+  }
+}
+
+class GeoProvince {
+  const GeoProvince({required this.name, required this.cities});
+
+  final String name;
+  final List<GeoCity> cities;
+
+  List<String> get cityNames =>
+      cities.map((item) => item.name).toList(growable: false);
+
+  GeoCity? city(String name) {
+    for (final item in cities) {
+      if (item.name == name) return item;
+    }
+    return null;
+  }
+}
+
+class GeoCity {
+  const GeoCity({required this.name, required this.districts});
+
+  final String name;
+  final List<GeoDistrict> districts;
+
+  List<String> get districtNames =>
+      districts.map((item) => item.name).toList(growable: false);
+
+  GeoDistrict? district(String name) {
+    for (final item in districts) {
+      if (item.name == name) return item;
+    }
+    return null;
+  }
+}
+
+class GeoDistrict {
+  const GeoDistrict({required this.name, required this.resorts});
+
+  final String name;
+  final List<String> resorts;
+}
+
+/// 兼容旧调用点的门面。
+///
+/// 新代码请直接用 [GeoRepository.instance]。
 class GeoData {
   const GeoData._();
 
-  /// 省级行政区（东北作为整体不是省级单位，这里不出现）。
-  static const List<String> provinces = <String>[
-    '北京',
-    '河北',
-    '内蒙古',
-    '辽宁',
-    '吉林',
-    '黑龙江',
-    '山东',
-    '山西',
-    '陕西',
-    '甘肃',
-    '新疆',
-    '四川',
-    '云南',
-  ];
+  static List<String> get provinces => GeoRepository.instance.provinceNames;
 
-  /// 常用雪场。第一项代表「没有固定雪场」。
-  static const String noFixedResort = '暂无固定雪场';
+  static String get noFixedResort => GeoRepository.instance.noFixedResort;
 
-  static const List<String> resorts = <String>[
-    noFixedResort,
-    '崇礼·万龙',
-    '崇礼·云顶',
-    '崇礼·太舞',
-    '崇礼·富龙',
-    '崇礼·银河',
-    '北京·南山',
-    '北京·军都山',
-    '北京·渔阳',
-    '吉林·北大湖',
-    '吉林·万科松花湖',
-    '黑龙江·亚布力',
-    '辽宁·怪坡',
-    '新疆·阿勒泰将军山',
-    '新疆·可可托海',
-    '四川·太子岭',
-  ];
+  static List<String> get resorts => GeoRepository.instance.allResorts;
 }

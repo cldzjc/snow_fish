@@ -39,6 +39,8 @@ dependencies:
   video_thumbnail: ^0.5.0
   share_plus: ^12.0.2
   lottie: ^3.3.3
+  flutter_svg: ^2.3.0
+  web: ^1.1.1
 
 dev_dependencies:
   flutter_test:
@@ -53,3 +55,5 @@ flutter:
 
   assets:
     - assets/brand/
+    - assets/data/
+    - assets/sfx/

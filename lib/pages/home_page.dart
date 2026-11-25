@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../constants/geo.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_typography.dart';
 import '../widgets/app/app_avatar.dart';
 import '../widgets/app/app_tabs.dart';
 import '../widgets/app/brand_mark.dart';
+import '../widgets/app/geo_picker_sheet.dart';
 import '../widgets/app/immersive.dart';
 import '../widgets/app/lottie_pull_refresh.dart';
 import 'activity_list_widget.dart';
@@ -25,6 +29,10 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage>
     with SingleTickerProviderStateMixin {
   static const List<String> _tabs = <String>['sk社区', '约约约'];
+
+  static const double _brandBarHeight = 58;
+  static const double _tabsHeight = 42;
+  static const double headerHeight = _brandBarHeight + _tabsHeight;
 
   final GlobalKey<PostsListWidgetState> _postsKey =
       GlobalKey<PostsListWidgetState>();
@@ -61,7 +69,6 @@ class _HomePageState extends State<HomePage>
       if (mounted) setState(() => _profile = null);
       return;
     }
-    // 先用登录态兜底，避免头像区闪烁。
     if (mounted) {
       setState(
         () => _profile = <String, dynamic>{
@@ -87,10 +94,9 @@ class _HomePageState extends State<HomePage>
     if (index == _index) return;
     setState(() => _index = index);
     homeActivityTabActive.value = index == 1;
-    immersiveHidden.value = false;
+    revealChrome();
   }
 
-  /// 刷新当前板块的数据，等真实请求结束再收起指示器。
   Future<void> _refreshCurrent() {
     final future = _index == 1
         ? _activityKey.currentState?.refreshNow()
@@ -119,37 +125,91 @@ class _HomePageState extends State<HomePage>
     if (mounted) await _loadProfile();
   }
 
+  /// 点击地区标签：切换的是「浏览用」的常驻地区，可以顺便写回资料。
+  Future<void> _switchRegion() async {
+    final selection = await showGeoPicker(
+      context,
+      title: '我的常驻地点',
+      initialRegion: _profile?['resident_region'] as String?,
+      initialResort: _profile?['resident_resort'] as String?,
+    );
+    if (selection == null || !mounted) return;
+
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    setState(() {
+      _profile = <String, dynamic>{
+        ...?_profile,
+        'resident_region': selection.region,
+        'resident_resort': selection.resort,
+      };
+    });
+    if (userId == null) return;
+    try {
+      await Supabase.instance.client
+          .from('user_profiles')
+          .update({
+            'resident_region': selection.region,
+            'resident_resort': selection.resort,
+          })
+          .eq('id', userId);
+      if (!mounted) return;
+      _postsKey.currentState?.refreshNow();
+      _activityKey.currentState?.refreshNow();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('常驻地点已更新为 ${selection.display}')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('地点更新失败：$error')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Scaffold(
       body: SafeArea(
         bottom: false,
-        child: Column(
+        child: Stack(
           children: [
-            ImmersiveHide(child: _buildTopBar()),
-            Expanded(
+            Positioned.fill(
               child: LottiePullRefresh(
                 controller: _brandAnim,
                 onRefresh: _refreshCurrent,
-                child: Column(
-                  children: [
-                    ImmersiveHide(
-                      child: AppTabs(
+                // 顶部栏是浮层，内容顶部留出等高的空白，滚到下面时被内容盖住。
+                child: Padding(
+                  padding: const EdgeInsets.only(top: headerHeight),
+                  child: IndexedStack(
+                    index: _index,
+                    children: [
+                      PostsListWidget(key: _postsKey),
+                      ActivityListWidget(key: _activityKey),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              child: ImmersiveHide(
+                hideOffset: const Offset(0, -headerHeight),
+                child: Container(
+                  color: colors.paper,
+                  child: Column(
+                    children: [
+                      _buildBrandBar(),
+                      AppTabs(
                         tabs: _tabs,
                         index: _index,
                         onChanged: _select,
+                        height: _tabsHeight,
                       ),
-                    ),
-                    Expanded(
-                      child: IndexedStack(
-                        index: _index,
-                        children: [
-                          PostsListWidget(key: _postsKey),
-                          ActivityListWidget(key: _activityKey),
-                        ],
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -159,18 +219,29 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// 顶栏：左侧当前用户，中间品牌标志（下拉时笔迹会被擦掉）。
-  Widget _buildTopBar() {
+  /// 品牌标识栏：左用户、中 logo、右常驻地点。
+  ///
+  /// 左右两栏给固定宽度，中间 logo 用 Expanded 居中，
+  /// 这样任何屏幕宽度下三者都不会互相压盖。
+  static const double _sideSlot = 112;
+
+  Widget _buildBrandBar() {
     return SizedBox(
-      height: 54,
-      child: Stack(
+      height: _brandBarHeight,
+      child: Row(
         children: [
-          Center(child: BrandMarkLottie(controller: _brandAnim, height: 34)),
-          Positioned(
-            left: 10,
-            top: 0,
-            bottom: 0,
-            child: Center(child: _buildUserChip()),
+          SizedBox(width: 52, child: Center(child: _buildUserChip())),
+          Expanded(
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: BrandMarkLottie(controller: _brandAnim, height: 40),
+              ),
+            ),
+          ),
+          SizedBox(
+            width: _sideSlot,
+            child: Center(child: _buildRegionChip()),
           ),
         ],
       ),
@@ -178,37 +249,66 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildUserChip() {
-    final colors = context.colors;
     final loggedIn = Supabase.instance.client.auth.currentUser != null;
-    final nickname = (_profile?['nickname'] as String?)?.trim();
-    final name = !loggedIn
-        ? '登录'
-        : ((nickname == null || nickname.isEmpty) ? '雪友' : nickname);
     final avatarUrl = loggedIn ? (_profile?['avatar_url'] as String?) : null;
 
     return Semantics(
       button: true,
-      label: loggedIn ? '$name 的主页' : '登录',
+      label: loggedIn ? '我的主页' : '登录',
       child: InkWell(
         borderRadius: BorderRadius.circular(999),
         onTap: loggedIn ? _openMyProfile : _openLogin,
         child: Padding(
+          padding: const EdgeInsets.only(left: 6, right: 4),
+          child: AppAvatar(url: avatarUrl, size: 32),
+        ),
+      ),
+    );
+  }
+
+  /// 常驻地点胶囊：图标 + 地区，点击可切换。
+  Widget _buildRegionChip() {
+    final colors = context.colors;
+    final geo = GeoRepository.instance;
+    final region = (_profile?['resident_region'] as String?)?.trim() ?? '';
+    final resort = (_profile?['resident_resort'] as String?)?.trim() ?? '';
+    // 只显示最末一级行政区 + 雪场，例如「崇礼·富龙」，避免胶囊过长。
+    final parts = <String>[
+      if (region.isNotEmpty) region.split('·').last.trim(),
+      if (resort.isNotEmpty && resort != geo.noFixedResort) resort,
+    ];
+    final label = parts.isEmpty ? '选择地点' : parts.join('·');
+
+    return Semantics(
+      button: true,
+      label: '切换常驻地点，当前 $label',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: _switchRegion,
+        child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              AppAvatar(url: avatarUrl, size: 30),
-              const SizedBox(width: 8),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 84),
+              SizedBox(
+                width: 18,
+                height: 12,
+                child: SvgPicture.asset(
+                  'assets/brand/icon_region.svg',
+                  fit: BoxFit.contain,
+                  colorFilter: ColorFilter.mode(colors.muted, BlendMode.srcIn),
+                ),
+              ),
+              const SizedBox(width: 5),
+              Flexible(
                 child: Text(
-                  name,
+                  label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13,
+                  style: AppText.caption.copyWith(
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: colors.ink,
+                    color: colors.muted,
                   ),
                 ),
               ),

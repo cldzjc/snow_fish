@@ -10,13 +10,13 @@ import 'package:path/path.dart' as p;
 import 'package:flutter/foundation.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../utils/custom_cropper.dart';
-import '../constants/geo.dart';
 import '../services/profile_sync_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/app/app_avatar.dart';
 import '../widgets/app/app_button.dart';
 import '../widgets/app/app_field.dart';
+import '../widgets/app/geo_picker_sheet.dart';
 
 // Top-level function for compute to compress images in a background isolate
 Uint8List _compressImageIsolate(Map<String, dynamic> args) {
@@ -451,30 +451,13 @@ class _EditProfilePageState extends State<EditProfilePage> {
             const SizedBox(height: AppSpace.lg),
             AppField(
               label: '常驻地区',
-              child: AppDropdown<String>(
-                options: [
-                  for (final province in GeoData.provinces)
-                    AppOption<String>(province, province),
-                ],
-                value: _residentRegion,
-                hint: '请选择常驻地区',
-                onChanged: (value) => setState(() => _residentRegion = value),
-              ),
-            ),
-            const SizedBox(height: AppSpace.lg),
-            AppField(
-              label: '常驻雪场',
-              note: '没有固定雪场可以选「${GeoData.noFixedResort}」',
-              child: AppDropdown<String>(
-                options: [
-                  for (final resort in GeoData.resorts)
-                    AppOption<String>(resort, resort),
-                ],
-                value: _residentResort,
-                hint: '请选择常驻雪场',
-                onChanged: (value) => setState(
-                  () => _residentResort = value ?? GeoData.noFixedResort,
-                ),
+              child: RegionField(
+                region: _residentRegion ?? '',
+                resort: _residentResort,
+                onChanged: (selection) => setState(() {
+                  _residentRegion = selection.region;
+                  _residentResort = selection.resort;
+                }),
               ),
             ),
             const SizedBox(height: AppSpace.lg),

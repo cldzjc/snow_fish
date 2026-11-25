@@ -12,6 +12,7 @@ import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
 import '../widgets/app/app_button.dart';
 import '../widgets/app/app_field.dart';
+import '../widgets/app/geo_picker_sheet.dart';
 import 'login_page.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -193,30 +194,13 @@ class _RegisterPageState extends State<RegisterPage> {
             AppField(
               label: '常驻地区',
               requiredMark: true,
-              child: AppDropdown<String>(
-                options: [
-                  for (final province in GeoData.provinces)
-                    AppOption<String>(province, province),
-                ],
-                value: _residentRegion.isEmpty ? null : _residentRegion,
-                hint: '请选择常驻地区',
-                onChanged: (value) =>
-                    setState(() => _residentRegion = value ?? ''),
-              ),
-            ),
-            const SizedBox(height: AppSpace.lg),
-            AppField(
-              label: '常驻雪场',
-              note: '可先选「${GeoData.noFixedResort}」',
-              child: AppDropdown<String>(
-                options: [
-                  for (final resort in GeoData.resorts)
-                    AppOption<String>(resort, resort),
-                ],
-                value: _residentResort,
-                onChanged: (value) => setState(
-                  () => _residentResort = value ?? GeoData.noFixedResort,
-                ),
+              child: RegionField(
+                region: _residentRegion,
+                resort: _residentResort,
+                onChanged: (selection) => setState(() {
+                  _residentRegion = selection.region;
+                  _residentResort = selection.resort;
+                }),
               ),
             ),
             const SizedBox(height: AppSpace.lg),

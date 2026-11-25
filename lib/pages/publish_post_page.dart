@@ -387,7 +387,7 @@ class _PublishPostPageState extends State<PublishPostPage> {
               requiredMark: true,
               child: AppDropdown<String>(
                 options: [
-                  for (final province in GeoData.provinces)
+                  for (final province in GeoRepository.instance.provinceNames)
                     AppOption<String>(province, province),
                 ],
                 value: _region,

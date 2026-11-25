@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../services/refresh_feedback.dart';
 import 'immersive.dart';
 
 /// 手势驱动的下拉刷新（Threads 式）。
@@ -73,6 +74,12 @@ class _LottiePullRefreshState extends State<LottiePullRefresh>
   bool _dragging = false;
   bool _refreshing = false;
 
+  /// 本次下拉已经响过反馈（避免同一手势重复震动/发声）。
+  bool _armed = false;
+
+  /// 已经震动到第几档。
+  int _tickStep = 0;
+
   /// refresh.json 中「完全擦除」的进度点，下拉阶段只走到这里。
   static const double _eraseAnchor = 0.44;
 
@@ -80,6 +87,7 @@ class _LottiePullRefreshState extends State<LottiePullRefresh>
   void initState() {
     super.initState();
     _gapAnim.addListener(_onGapTick);
+    RefreshFeedback.instance.prepare();
   }
 
   @override
@@ -117,15 +125,39 @@ class _LottiePullRefreshState extends State<LottiePullRefresh>
     widget.controller
       ..stop()
       ..value = _gesture * _eraseAnchor;
+    _emitFeedback(gap);
+  }
+
+  /// 下拉过程中的触感刻度与「到位」提示。
+  void _emitFeedback(double gap) {
+    if (_gesture < 1) {
+      // 每走过 1/4 程给一次轻刻度，手感接近 Threads。
+      final step = (gap / widget.threshold * 4).floor();
+      if (step > _tickStep && step <= 3) {
+        _tickStep = step;
+        RefreshFeedback.instance.tick();
+      }
+      return;
+    }
+    if (_armed) return;
+    _armed = true;
+    RefreshFeedback.instance.armed();
+  }
+
+  void _resetFeedback() {
+    _armed = false;
+    _tickStep = 0;
   }
 
   bool _onScrollNotification(ScrollNotification notification) {
     if (!widget.enabled || notification.depth != 0) return false;
-    reportImmersiveScroll(notification);
+    // 下拉刷新过程中不让顶部/底部栏跟着收起，logo 要在原位擦除再重绘。
+    if (_gap <= 1 && !_refreshing) reportImmersiveScroll(notification);
     if (_refreshing) return false;
 
     if (notification is ScrollStartNotification) {
       _dragging = true;
+      _resetFeedback();
       _gapAnim.stop();
       return false;
     }
@@ -133,7 +165,10 @@ class _LottiePullRefreshState extends State<LottiePullRefresh>
     if (notification is ScrollUpdateNotification) {
       final pixels = notification.metrics.pixels;
       _nativeOverscroll = pixels < 0 ? -pixels : 0;
-      if (_nativeOverscroll > 0) _applyGap(_nativeOverscroll);
+      if (_nativeOverscroll > 0) {
+        revealChrome();
+        _applyGap(_nativeOverscroll);
+      }
       return false;
     }
 
@@ -141,6 +176,7 @@ class _LottiePullRefreshState extends State<LottiePullRefresh>
       final delta = -notification.overscroll;
       if (delta > 0 && notification.metrics.pixels <= 0) {
         _gapAnim.stop();
+        revealChrome();
         _applyGap(_gap + delta * widget.dragFactor);
       }
       return false;
@@ -184,6 +220,7 @@ class _LottiePullRefreshState extends State<LottiePullRefresh>
   Future<void> _startRefresh() async {
     setState(() => _refreshing = true);
     _gesture = 1;
+    RefreshFeedback.instance.trigger();
     _animateGap(widget.holdHeight, duration: const Duration(milliseconds: 160));
 
     final redraw = widget.controller

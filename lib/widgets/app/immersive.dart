@@ -1,67 +1,78 @@
 import 'package:flutter/material.dart';
 
-/// 当前是否进入「沉浸式」状态（顶部/底部栏收起）。
+/// 沉浸式进度：0 = 全部可见，1 = 顶部/底部栏完全收起。
 ///
-/// 只由首页信息流的滚动方向驱动：向下滚动隐藏，向上滚动或回到顶部恢复。
-final ValueNotifier<bool> immersiveHidden = ValueNotifier<bool>(false);
+/// 由首页信息流的滚动方向驱动，完全跟随手指幅度连续变化。
+final ValueNotifier<double> immersiveProgress = ValueNotifier<double>(0);
 
-/// 把滚动通知翻译成沉浸式状态。
+/// 向下滚动多远完全收起（像素）。
+const double _hideDistance = 130;
+
+/// 向上滚动多远完全展开（像素）。
+const double _showDistance = 80;
+
+void _advance(double delta) {
+  final next = (immersiveProgress.value + delta).clamp(0.0, 1.0);
+  if ((next - immersiveProgress.value).abs() < 0.001) return;
+  immersiveProgress.value = next;
+}
+
+/// 把滚动通知翻译成沉浸式进度。
 void reportImmersiveScroll(ScrollNotification notification) {
   if (notification.depth != 0) return;
   if (notification is ScrollUpdateNotification) {
-    final delta = notification.scrollDelta ?? 0;
-    if (notification.metrics.pixels <= 6) {
-      if (immersiveHidden.value) immersiveHidden.value = false;
+    final pixels = notification.metrics.pixels;
+    if (pixels <= 4) {
+      if (immersiveProgress.value != 0) immersiveProgress.value = 0;
       return;
     }
-    if (delta > 1.5) {
-      if (!immersiveHidden.value) immersiveHidden.value = true;
-    } else if (delta < -1.5) {
-      if (immersiveHidden.value) immersiveHidden.value = false;
+    final delta = notification.scrollDelta ?? 0;
+    if (delta > 0) {
+      _advance(delta / _hideDistance);
+    } else if (delta < 0) {
+      _advance(delta / _showDistance);
     }
   } else if (notification is ScrollEndNotification) {
-    if (notification.metrics.pixels <= 6 && immersiveHidden.value) {
-      immersiveHidden.value = false;
+    if (notification.metrics.pixels <= 4 && immersiveProgress.value != 0) {
+      immersiveProgress.value = 0;
     }
   }
 }
 
-/// 随沉浸式状态收起 / 展开的一段界面。
+/// 立即恢复顶部与底部栏。
+void revealChrome() {
+  if (immersiveProgress.value != 0) immersiveProgress.value = 0;
+}
+
+/// 随沉浸式进度平移并淡出的一段界面。
 ///
-/// [alignment] 决定收起时保留哪一端：顶部栏用 bottomCenter（向上滑走），
-/// 底部栏用 topCenter（向下收起）。
+/// [hideOffset] 是收起后额外位移：顶部栏传负的 dy（向上消失），
+/// 底部栏传正的 dy（向下收起）。
 class ImmersiveHide extends StatelessWidget {
   const ImmersiveHide({
     super.key,
     required this.child,
-    this.alignment = Alignment.bottomCenter,
-    this.duration = const Duration(milliseconds: 260),
+    required this.hideOffset,
   });
 
   final Widget child;
-  final Alignment alignment;
-  final Duration duration;
+  final Offset hideOffset;
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: immersiveHidden,
-      builder: (context, hidden, child) {
-        return TweenAnimationBuilder<double>(
-          tween: Tween<double>(begin: 0, end: hidden ? 1 : 0),
-          duration: duration,
-          curve: Curves.easeOutCubic,
-          builder: (context, value, inner) {
-            if (value <= 0.001) return inner!;
-            return ClipRect(
-              child: Align(
-                alignment: alignment,
-                heightFactor: 1 - value,
-                child: Opacity(opacity: 1 - value, child: inner),
-              ),
-            );
-          },
-          child: child,
+    return ValueListenableBuilder<double>(
+      valueListenable: immersiveProgress,
+      builder: (context, progress, child) {
+        final visible = (1 - progress).clamp(0.0, 1.0);
+        return IgnorePointer(
+          ignoring: visible < 0.5,
+          child: Opacity(
+            opacity: visible,
+            child: Transform.translate(
+              offset: hideOffset * progress,
+              child: child,
+            ),
+          ),
         );
       },
       child: child,

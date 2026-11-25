@@ -38,71 +38,74 @@ class _AppSheetBody<T> extends StatelessWidget {
         borderRadius: const BorderRadius.vertical(
           top: Radius.circular(AppRadius.sheet),
         ),
-        child: SafeArea(
-          top: false,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.sizeOf(context).height * 0.88,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(height: AppSpace.md),
-                Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: colors.line,
-                    borderRadius: BorderRadius.circular(2),
+        child: SizedBox(
+          width: double.infinity,
+          child: SafeArea(
+            top: false,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.88,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: AppSpace.md),
+                  Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: colors.line,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpace.xl,
-                    AppSpace.lg,
-                    AppSpace.sm,
-                    AppSpace.sm,
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          title,
-                          style: AppText.title.copyWith(color: colors.ink),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpace.xl,
+                      AppSpace.lg,
+                      AppSpace.sm,
+                      AppSpace.sm,
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: AppText.title.copyWith(color: colors.ink),
+                          ),
                         ),
-                      ),
-                      Semantics(
-                        button: true,
-                        label: '关闭弹层',
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(AppRadius.sm),
-                          onTap: () => Navigator.of(context).maybePop(),
-                          child: SizedBox(
-                            width: AppSize.tap,
-                            height: AppSize.tap,
-                            child: Icon(
-                              AppIcons.close,
-                              size: 20,
-                              color: colors.muted,
+                        Semantics(
+                          button: true,
+                          label: '关闭弹层',
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(AppRadius.sm),
+                            onTap: () => Navigator.of(context).maybePop(),
+                            child: SizedBox(
+                              width: AppSize.tap,
+                              height: AppSize.tap,
+                              child: Icon(
+                                AppIcons.close,
+                                size: 20,
+                                color: colors.muted,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                Flexible(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpace.xl,
-                      AppSpace.sm,
-                      AppSpace.xl,
-                      AppSpace.xxl,
+                      ],
                     ),
-                    child: builder(context),
                   ),
-                ),
-              ],
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpace.xl,
+                        AppSpace.sm,
+                        AppSpace.xl,
+                        AppSpace.xxl,
+                      ),
+                      child: builder(context),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

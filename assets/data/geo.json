@@ -1,0 +1,696 @@
+{
+  "version": "20261125.1",
+  "noFixedResort": "暂无固定雪场",
+  "regions": [
+    {
+      "name": "北京",
+      "cities": [
+        {
+          "name": "北京",
+          "districts": [
+            {
+              "name": "延庆",
+              "resorts": [
+                "海坨",
+                "石京龙"
+              ]
+            },
+            {
+              "name": "密云",
+              "resorts": [
+                "南山",
+                "云佛山"
+              ]
+            },
+            {
+              "name": "怀柔",
+              "resorts": [
+                "怀北"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "天津",
+      "cities": [
+        {
+          "name": "天津",
+          "districts": [
+            {
+              "name": "蓟州",
+              "resorts": [
+                "盘山"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "河北",
+      "cities": [
+        {
+          "name": "张家口",
+          "districts": [
+            {
+              "name": "崇礼",
+              "resorts": [
+                "万龙",
+                "富龙",
+                "云顶",
+                "太舞",
+                "翠云山",
+                "多乐美地",
+                "长城岭"
+              ]
+            },
+            {
+              "name": "张北",
+              "resorts": [
+                "塞那都"
+              ]
+            },
+            {
+              "name": "赤城",
+              "resorts": [
+                "赤城滑雪场"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "石家庄",
+          "districts": []
+        },
+        {
+          "name": "保定",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "山西",
+      "cities": [
+        {
+          "name": "太原",
+          "districts": [
+            {
+              "name": "阳曲",
+              "resorts": [
+                "采薇庄园"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "大同",
+          "districts": []
+        },
+        {
+          "name": "晋中",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "内蒙古",
+      "cities": [
+        {
+          "name": "呼和浩特",
+          "districts": []
+        },
+        {
+          "name": "呼伦贝尔",
+          "districts": [
+            {
+              "name": "牙克石",
+              "resorts": [
+                "凤凰山"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "赤峰",
+          "districts": []
+        },
+        {
+          "name": "包头",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "辽宁",
+      "cities": [
+        {
+          "name": "沈阳",
+          "districts": [
+            {
+              "name": "浑南",
+              "resorts": [
+                "怪坡"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "大连",
+          "districts": [
+            {
+              "name": "甘井子",
+              "resorts": [
+                "林海"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "本溪",
+          "districts": []
+        },
+        {
+          "name": "抚顺",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "吉林",
+      "cities": [
+        {
+          "name": "长春",
+          "districts": [
+            {
+              "name": "双阳",
+              "resorts": [
+                "莲花山"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "吉林",
+          "districts": [
+            {
+              "name": "丰满",
+              "resorts": [
+                "北大湖"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "白山",
+          "districts": [
+            {
+              "name": "抚松",
+              "resorts": [
+                "万达长白山"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "通化",
+          "districts": []
+        },
+        {
+          "name": "延边",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "黑龙江",
+      "cities": [
+        {
+          "name": "哈尔滨",
+          "districts": [
+            {
+              "name": "尚志",
+              "resorts": [
+                "亚布力"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "牡丹江",
+          "districts": [
+            {
+              "name": "海林",
+              "resorts": [
+                "雪乡"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "齐齐哈尔",
+          "districts": []
+        },
+        {
+          "name": "佳木斯",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "山东",
+      "cities": [
+        {
+          "name": "青岛",
+          "districts": [
+            {
+              "name": "崂山",
+              "resorts": [
+                "崂山"
+              ]
+            },
+            {
+              "name": "即墨",
+              "resorts": [
+                "天泰"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "济南",
+          "districts": [
+            {
+              "name": "历城",
+              "resorts": [
+                "九如山"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "烟台",
+          "districts": []
+        },
+        {
+          "name": "威海",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "陕西",
+      "cities": [
+        {
+          "name": "西安",
+          "districts": [
+            {
+              "name": "长安",
+              "resorts": [
+                "翠华山"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "宝鸡",
+          "districts": []
+        },
+        {
+          "name": "咸阳",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "甘肃",
+      "cities": [
+        {
+          "name": "兰州",
+          "districts": [
+            {
+              "name": "榆中",
+              "resorts": [
+                "兴隆山"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "张掖",
+          "districts": []
+        },
+        {
+          "name": "酒泉",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "新疆",
+      "cities": [
+        {
+          "name": "乌鲁木齐",
+          "districts": [
+            {
+              "name": "乌鲁木齐县",
+              "resorts": [
+                "丝绸之路",
+                "白云"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "阿勒泰",
+          "districts": [
+            {
+              "name": "富蕴",
+              "resorts": [
+                "可可托海"
+              ]
+            },
+            {
+              "name": "布尔津",
+              "resorts": [
+                "禾木"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "伊犁",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "四川",
+      "cities": [
+        {
+          "name": "成都",
+          "districts": [
+            {
+              "name": "大邑",
+              "resorts": [
+                "西岭雪山"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "阿坝",
+          "districts": [
+            {
+              "name": "理县",
+              "resorts": [
+                "太子岭"
+              ]
+            },
+            {
+              "name": "茂县",
+              "resorts": [
+                "九鼎山"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "雅安",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "云南",
+      "cities": [
+        {
+          "name": "昆明",
+          "districts": [
+            {
+              "name": "禄劝",
+              "resorts": [
+                "轿子雪山"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "迪庆",
+          "districts": []
+        },
+        {
+          "name": "丽江",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "西藏",
+      "cities": [
+        {
+          "name": "拉萨",
+          "districts": []
+        },
+        {
+          "name": "林芝",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "青海",
+      "cities": [
+        {
+          "name": "西宁",
+          "districts": []
+        },
+        {
+          "name": "海东",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "宁夏",
+      "cities": [
+        {
+          "name": "银川",
+          "districts": []
+        },
+        {
+          "name": "固原",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "河南",
+      "cities": [
+        {
+          "name": "郑州",
+          "districts": []
+        },
+        {
+          "name": "洛阳",
+          "districts": []
+        },
+        {
+          "name": "新乡",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "湖北",
+      "cities": [
+        {
+          "name": "武汉",
+          "districts": []
+        },
+        {
+          "name": "神农架",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "湖南",
+      "cities": [
+        {
+          "name": "长沙",
+          "districts": []
+        },
+        {
+          "name": "张家界",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "安徽",
+      "cities": [
+        {
+          "name": "合肥",
+          "districts": []
+        },
+        {
+          "name": "黄山",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "江苏",
+      "cities": [
+        {
+          "name": "南京",
+          "districts": []
+        },
+        {
+          "name": "徐州",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "浙江",
+      "cities": [
+        {
+          "name": "杭州",
+          "districts": [
+            {
+              "name": "临安",
+              "resorts": [
+                "大明山"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "宁波",
+          "districts": []
+        },
+        {
+          "name": "湖州",
+          "districts": [
+            {
+              "name": "安吉",
+              "resorts": [
+                "江南天池"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "江西",
+      "cities": [
+        {
+          "name": "南昌",
+          "districts": []
+        },
+        {
+          "name": "九江",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "福建",
+      "cities": [
+        {
+          "name": "福州",
+          "districts": []
+        },
+        {
+          "name": "南平",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "广东",
+      "cities": [
+        {
+          "name": "广州",
+          "districts": []
+        },
+        {
+          "name": "深圳",
+          "districts": []
+        },
+        {
+          "name": "韶关",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "广西",
+      "cities": [
+        {
+          "name": "南宁",
+          "districts": []
+        },
+        {
+          "name": "桂林",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "海南",
+      "cities": [
+        {
+          "name": "海口",
+          "districts": []
+        },
+        {
+          "name": "三亚",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "重庆",
+      "cities": [
+        {
+          "name": "重庆",
+          "districts": [
+            {
+              "name": "武隆",
+              "resorts": [
+                "仙女山"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "贵州",
+      "cities": [
+        {
+          "name": "贵阳",
+          "districts": []
+        },
+        {
+          "name": "六盘水",
+          "districts": []
+        }
+      ]
+    },
+    {
+      "name": "上海",
+      "cities": [
+        {
+          "name": "上海",
+          "districts": []
+        }
+      ]
+    }
+  ]
+}

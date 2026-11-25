@@ -25,9 +25,10 @@ class ActivityListWidget extends StatefulWidget {
 
 class ActivityListWidgetState extends State<ActivityListWidget>
     with AutomaticKeepAliveClientMixin {
-  static final List<AppOption<String>> _regionOptions = <AppOption<String>>[
+  static List<AppOption<String>> get _regionOptions => <AppOption<String>>[
     const AppOption<String>('', '全部地区'),
-    for (final region in GeoData.provinces) AppOption<String>(region, region),
+    for (final region in GeoRepository.instance.provinceNames)
+      AppOption<String>(region, region),
   ];
 
   static const List<AppOption<String>> _typeOptions = <AppOption<String>>[
@@ -81,7 +82,8 @@ class ActivityListWidgetState extends State<ActivityListWidget>
               .eq('id', user.id)
               .maybeSingle();
           final region = (row?['resident_region'] as String?)?.trim() ?? '';
-          if (GeoData.provinces.contains(region)) _region = region;
+          final province = GeoRepository.instance.provinceOf(region);
+          if (province.isNotEmpty) _region = province;
         } catch (_) {
           // 读取失败时保持「全部地区」。
         }

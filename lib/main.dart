@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'supabase_client.dart';
 import 'config.dart';
+import 'constants/geo.dart';
 import 'pages/home_tabs.dart';
 import 'pages/post_detail_page.dart';
 import 'services/deep_link.dart';
@@ -15,6 +18,10 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Web 使用 /p/<id> 形式的真实路径，分享链接不带 `#`。
   url_strategy.configureUrlStrategy();
+
+  // 地区数据先读内置文件，再由站点上的同名文件覆盖（改文件即可热更新）。
+  await GeoRepository.instance.load();
+  unawaited(GeoRepository.instance.refreshFromRemote());
 
   if (!USE_LOCAL_DATA) {
     try {
