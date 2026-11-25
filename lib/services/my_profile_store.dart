@@ -1,0 +1,83 @@
+import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+/// 当前登录用户的资料缓存。
+///
+/// 首页顶栏、我的页、帖子卡片的作者标签都读这一份，
+/// 修改地区/雪场后广播一次，所有地方立刻同步，不用各自重新请求。
+class MyProfileStore {
+  MyProfileStore._();
+
+  /// 当前用户资料；未登录或未加载时为 null。
+  static final ValueNotifier<Map<String, dynamic>?> profile =
+      ValueNotifier<Map<String, dynamic>?>(null);
+
+  /// 资料变更计数，供需要感知变化的页面监听。
+  static final ValueNotifier<int> changedTick = ValueNotifier<int>(0);
+
+  static String? get userId => Supabase.instance.client.auth.currentUser?.id;
+
+  static Map<String, dynamic>? get value => profile.value;
+
+  /// 登录态兜底：先给出昵称/头像，避免界面空一屏。
+  static void seedFromAuth() {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) {
+      profile.value = null;
+      return;
+    }
+    profile.value = <String, dynamic>{
+      ...?profile.value,
+      'id': user.id,
+      'nickname': user.userMetadata?['nickname'] ?? '',
+      'avatar_url': user.userMetadata?['avatar_url'] ?? '',
+    };
+  }
+
+  /// 读取线上资料（force=false 时已有数据也照样刷新）。
+  static Future<void> load() async {
+    final id = userId;
+    if (id == null) {
+      profile.value = null;
+      return;
+    }
+    seedFromAuth();
+    try {
+      final row = await Supabase.instance.client
+          .from('user_profiles')
+          .select()
+          .eq('id', id)
+          .maybeSingle();
+      if (row == null) return;
+      profile.value = Map<String, dynamic>.from(row);
+    } catch (_) {
+      // 读取失败时保留兜底值。
+    }
+  }
+
+  /// 本地先更新，再写回数据库；失败时抛出，由调用方提示。
+  static Future<void> updateLocation({
+    required String region,
+    required String resort,
+  }) async {
+    final id = userId;
+    profile.value = <String, dynamic>{
+      ...?profile.value,
+      'resident_region': region,
+      'resident_resort': resort,
+    };
+    changedTick.value++;
+    if (id == null) return;
+    await Supabase.instance.client
+        .from('user_profiles')
+        .update({'resident_region': region, 'resident_resort': resort})
+        .eq('id', id);
+    await load();
+    changedTick.value++;
+  }
+
+  static void clear() {
+    profile.value = null;
+    changedTick.value++;
+  }
+}

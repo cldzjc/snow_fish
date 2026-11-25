@@ -6,6 +6,7 @@ import '../models/base_entity.dart';
 import '../models/user_profile.dart';
 import '../services/entity_service.dart';
 import '../services/moderation_service.dart';
+import '../services/my_profile_store.dart';
 import '../services/profile_sync_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
@@ -51,6 +52,19 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   void initState() {
     super.initState();
+    MyProfileStore.changedTick.addListener(_onProfileChanged);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    MyProfileStore.changedTick.removeListener(_onProfileChanged);
+    super.dispose();
+  }
+
+  /// 自己的资料在别处被改过（例如首页切换了常驻地点），这里补齐。
+  void _onProfileChanged() {
+    if (!mounted || !_isOwn) return;
     _load();
   }
 

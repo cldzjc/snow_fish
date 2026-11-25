@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/base_entity.dart';
+import '../models/refresh_result.dart';
 import '../services/entity_service.dart';
+import '../services/my_profile_store.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/app/app_icons.dart';
 import '../widgets/app/app_state_views.dart';
@@ -16,7 +18,11 @@ import 'video_player_page.dart';
 final ValueNotifier<int> feedRefreshTick = ValueNotifier<int>(0);
 
 class PostsListWidget extends StatefulWidget {
-  const PostsListWidget({super.key});
+  const PostsListWidget({super.key, this.topInset = 0});
+
+  /// 列表顶部的留白（首页把顶栏做成浮层后，用它让首条内容落在顶栏下方）。
+  /// 这段留白属于滚动内容，会和列表一起滚走，不会在顶部留下空白。
+  final double topInset;
 
   @override
   State<PostsListWidget> createState() => PostsListWidgetState();
@@ -48,15 +54,33 @@ class PostsListWidgetState extends State<PostsListWidget>
     super.initState();
     _scrollController.addListener(_onScroll);
     feedRefreshTick.addListener(_onExternalRefresh);
+    MyProfileStore.changedTick.addListener(_onProfileChanged);
     _loadInitial();
   }
 
   @override
   void dispose() {
     feedRefreshTick.removeListener(_onExternalRefresh);
+    MyProfileStore.changedTick.removeListener(_onProfileChanged);
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// 自己的资料（昵称/地区）变了：清掉作者缓存再拉一次。
+  void _onProfileChanged() {
+    if (!mounted) return;
+    final myId = MyProfileStore.userId;
+    if (myId != null) _profileCache.remove(myId);
+    reloadProfiles();
+  }
+
+  /// 重新拉一遍当前列表所有作者的资料（地区标签会跟着更新）。
+  Future<void> reloadProfiles() async {
+    if (!mounted) return;
+    final posts = List<BaseEntity>.from(_posts);
+    if (posts.isEmpty) return;
+    await _loadProfiles(posts, force: true);
   }
 
   void _onExternalRefresh() {
@@ -87,6 +111,7 @@ class PostsListWidgetState extends State<PostsListWidget>
     try {
       final posts = await _entityService.fetchSkCommunity(limit: _pageSize);
       if (!mounted) return;
+      final known = _posts.map((item) => item.id).toSet();
       setState(() {
         _posts
           ..clear()
@@ -94,10 +119,15 @@ class PostsListWidgetState extends State<PostsListWidget>
         _hasMore = posts.length >= _pageSize;
         _initialLoading = false;
       });
+      _lastNewCount = known.isEmpty
+          ? 0
+          : posts.where((item) => !known.contains(item.id)).length;
+      _lastFailed = false;
       _loadProfiles(posts, force: forceProfiles);
       _loadLikeStats(posts);
     } catch (e) {
       if (!mounted) return;
+      _lastFailed = true;
       setState(() {
         _error = e.toString();
         _initialLoading = false;
@@ -105,16 +135,18 @@ class PostsListWidgetState extends State<PostsListWidget>
     }
   }
 
-  Future<void> _refresh() async {
-    // 不清空作者/点赞缓存：刷新期间保持旧数据可见，取回后再覆盖。
-    await _loadInitial(showSkeleton: false, forceProfiles: true);
-  }
+  /// 最近一次刷新的增量与失败状态，供 [refreshNow] 返回。
+  int _lastNewCount = 0;
+  bool _lastFailed = false;
 
-  /// 供首页下拉刷新调用；返回真实请求完成后的 Future。
-  /// 供首页下拉刷新调用；返回刷新后的条数，用于提示。
-  Future<int> refreshNow() async {
-    await _refresh();
-    return _posts.length;
+  Future<void> _refresh() =>
+      _loadInitial(showSkeleton: false, forceProfiles: true);
+
+  /// 下拉刷新：返回相比刷新前「新增」的条数。
+  Future<RefreshResult> refreshNow() async {
+    await _loadInitial(showSkeleton: false, forceProfiles: true);
+    if (_lastFailed) return RefreshResult.failure;
+    return RefreshResult(newCount: _lastNewCount, total: _posts.length);
   }
 
   Future<void> _loadMore() async {
@@ -271,7 +303,7 @@ class PostsListWidgetState extends State<PostsListWidget>
     return ListView.builder(
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(bottom: 92),
+      padding: EdgeInsets.only(top: widget.topInset, bottom: 92),
       itemCount: _posts.length + (_hasMore ? 1 : 0),
       itemBuilder: (context, index) {
         if (index >= _posts.length) {

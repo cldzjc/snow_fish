@@ -17,11 +17,12 @@ class LottiePullRefresh extends StatefulWidget {
     required this.controller,
     required this.onRefresh,
     required this.child,
-    this.threshold = 78,
-    this.dragFactor = 0.85,
-    this.holdHeight = 78,
+    this.threshold = 72,
+    this.dragFactor = 1,
+    this.holdHeight = 72,
     this.redrawDuration = const Duration(milliseconds: 720),
-    this.settleDuration = const Duration(milliseconds: 200),
+    this.settleDuration = const Duration(milliseconds: 280),
+    this.holdAfterRefresh = const Duration(milliseconds: 320),
     this.enabled = true,
   });
 
@@ -45,7 +46,11 @@ class LottiePullRefresh extends StatefulWidget {
   final Duration redrawDuration;
 
   /// 未达阈值时回弹时长。
+  /// 回弹时长。
   final Duration settleDuration;
+
+  /// 数据返回后、回弹前的停留时长，避免动画一晃而过看不清结果。
+  final Duration holdAfterRefresh;
 
   final bool enabled;
 
@@ -73,6 +78,9 @@ class _LottiePullRefreshState extends State<LottiePullRefresh>
   bool _dragging = false;
   bool _refreshing = false;
 
+  /// 刷新结束后，本次手势不再允许重新触发（要等下一次按下）。
+  bool _blockedThisGesture = false;
+
   /// refresh.json 中「完全擦除」的进度点，下拉阶段只走到这里。
   static const double _eraseAnchor = 0.44;
 
@@ -98,15 +106,15 @@ class _LottiePullRefreshState extends State<LottiePullRefresh>
     setState(() => _gap = next);
   }
 
-  void _animateGap(
+  Future<void> _animateGap(
     double to, {
     Duration duration = const Duration(milliseconds: 220),
-  }) {
+  }) async {
     _gapAnim.stop();
     _gapFrom = _gap;
     _gapTo = to.clamp(0.0, _maxGap);
     _gapAnim.duration = duration;
-    _gapAnim.forward(from: 0);
+    await _gapAnim.forward(from: 0).orCancel.catchError((Object _) {});
   }
 
   void _applyGap(double value) {
@@ -129,6 +137,7 @@ class _LottiePullRefreshState extends State<LottiePullRefresh>
 
     if (notification is ScrollStartNotification) {
       _dragging = true;
+      _blockedThisGesture = false;
       _gapAnim.stop();
       return false;
     }
@@ -136,7 +145,7 @@ class _LottiePullRefreshState extends State<LottiePullRefresh>
     if (notification is ScrollUpdateNotification) {
       final pixels = notification.metrics.pixels;
       _nativeOverscroll = pixels < 0 ? -pixels : 0;
-      if (_nativeOverscroll > 0) {
+      if (_nativeOverscroll > 0 && !_blockedThisGesture) {
         revealChrome();
         _applyGap(_nativeOverscroll);
       }
@@ -145,7 +154,9 @@ class _LottiePullRefreshState extends State<LottiePullRefresh>
 
     if (notification is OverscrollNotification) {
       final delta = -notification.overscroll;
-      if (delta > 0 && notification.metrics.pixels <= 0) {
+      if (delta > 0 &&
+          notification.metrics.pixels <= 0 &&
+          !_blockedThisGesture) {
         _gapAnim.stop();
         revealChrome();
         _applyGap(_gap + delta * widget.dragFactor);
@@ -189,12 +200,19 @@ class _LottiePullRefreshState extends State<LottiePullRefresh>
   }
 
   /// 拉到位立即触发：先跑到阈值锁定位置，再自动播放重绘并刷新。
+  ///
+  /// 回弹（gap → 0）一定要等真实刷新结束，所以顺序是：
+  ///   重绘动画 + 数据请求（并行） → 短暂停留 → 回弹。
   Future<void> _startRefresh() async {
     if (_refreshing) return;
     setState(() => _refreshing = true);
     _gesture = 1;
     widget.controller.stop();
-    _animateGap(widget.threshold, duration: const Duration(milliseconds: 120));
+    await _animateGap(
+      widget.threshold,
+      duration: const Duration(milliseconds: 120),
+    );
+    if (!mounted) return;
 
     final redraw = widget.controller
         .animateTo(1, duration: widget.redrawDuration, curve: Curves.easeInOut)
@@ -205,17 +223,22 @@ class _LottiePullRefreshState extends State<LottiePullRefresh>
     await Future.wait<void>(<Future<void>>[redraw, refresh]);
     if (!mounted) return;
 
-    _animateGap(0, duration: const Duration(milliseconds: 220));
+    // 数据已到位，停一下让用户看清刷新结果，再回弹。
+    await Future<void>.delayed(widget.holdAfterRefresh);
+    if (!mounted) return;
+
+    await _animateGap(0, duration: widget.settleDuration);
+    if (!mounted) return;
     // 1.0 与 0 都是「完整 logo」，直接归零不会有可见跳变。
     widget.controller.value = 0;
-    await Future<void>.delayed(const Duration(milliseconds: 240));
-    if (!mounted) return;
     setState(() {
       _refreshing = false;
       _gesture = 0;
       _gap = 0;
       _nativeOverscroll = 0;
     });
+    // 同一次下拉不再重复触发，必须重新按下。
+    _blockedThisGesture = true;
   }
 
   @override

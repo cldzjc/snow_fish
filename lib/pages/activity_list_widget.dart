@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/base_entity.dart';
+import '../models/refresh_result.dart';
 import '../services/entity_service.dart';
 import '../constants/geo.dart';
 import '../theme/app_colors.dart';
@@ -17,7 +18,10 @@ import 'post_detail_page.dart';
 final ValueNotifier<int> activityRefreshTick = ValueNotifier<int>(0);
 
 class ActivityListWidget extends StatefulWidget {
-  const ActivityListWidget({super.key});
+  const ActivityListWidget({super.key, this.topInset = 0});
+
+  /// 列表顶部的留白（属于滚动内容，会随列表一起滚走）。
+  final double topInset;
 
   @override
   State<ActivityListWidget> createState() => ActivityListWidgetState();
@@ -67,12 +71,14 @@ class ActivityListWidgetState extends State<ActivityListWidget>
     if (mounted) _load(showSkeleton: false);
   }
 
-  /// 供首页下拉刷新调用；返回真实请求完成后的 Future。
-  /// 供首页下拉刷新调用；返回刷新后的条数，用于提示。
-  Future<int> refreshNow() async {
+  /// 下拉刷新：返回相比刷新前「新增」的条数。
+  Future<RefreshResult> refreshNow() async {
     await _load(showSkeleton: false);
-    return _items.length;
+    if (_error != null) return RefreshResult.failure;
+    return RefreshResult(newCount: _lastNewCount, total: _items.length);
   }
+
+  int _lastNewCount = 0;
 
   Future<void> _load({bool initial = false, bool showSkeleton = true}) async {
     if (initial) {
@@ -104,6 +110,10 @@ class ActivityListWidgetState extends State<ActivityListWidget>
         activityType: _type.isEmpty ? null : _type,
       );
       if (!mounted) return;
+      final known = _items.map((item) => item.id).toSet();
+      _lastNewCount = known.isEmpty
+          ? items.length
+          : items.where((item) => !known.contains(item.id)).length;
       setState(() {
         _items = items;
         _loading = false;
@@ -174,7 +184,7 @@ class ActivityListWidgetState extends State<ActivityListWidget>
     }
     return ListView.separated(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(bottom: 92),
+      padding: EdgeInsets.only(top: widget.topInset, bottom: 92),
       itemCount: _items.length,
       separatorBuilder: (_, __) => const SizedBox.shrink(),
       itemBuilder: (_, index) => _ActivityRow(
