@@ -201,14 +201,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
       builder: (sheetContext) => Column(
         children: [
           _DetailAction(
-            icon: AppIcons.share,
-            label: '分享',
-            onTap: () {
-              Navigator.of(sheetContext).pop();
-              ShareService.shareEntity(context, post);
-            },
-          ),
-          _DetailAction(
             icon: AppIcons.flag,
             label: '举报',
             onTap: () {
@@ -585,7 +577,14 @@ class _PostDetailPageState extends State<PostDetailPage> {
           _buildActivityCard(post),
         ],
         const SizedBox(height: AppSpace.md),
-        PostActionBar(postId: widget.postId),
+        PostActionBar(
+          postId: widget.postId,
+          onShare: () {
+            final post = _post;
+            if (post == null) return;
+            ShareService.shareEntity(context, post);
+          },
+        ),
         const SizedBox(height: AppSpace.sm),
         Divider(color: colors.line, height: 1),
         const SizedBox(height: AppSpace.lg),

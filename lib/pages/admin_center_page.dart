@@ -645,7 +645,10 @@ class _ReportRow extends StatelessWidget {
     final authorId = targetType == 'user'
         ? report['target_id']?.toString()
         : target?['user_id']?.toString();
-    final authorName = (target?['nickname'] as String?)?.trim() ?? '';
+    final authorName =
+        ((report['author_nickname'] as String?)?.trim().isNotEmpty ?? false)
+        ? (report['author_nickname'] as String).trim()
+        : ((target?['nickname'] as String?)?.trim() ?? '');
 
     return Container(
       decoration: BoxDecoration(

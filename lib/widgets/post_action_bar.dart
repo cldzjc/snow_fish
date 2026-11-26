@@ -7,14 +7,20 @@ import '../theme/app_typography.dart';
 import 'app/app_icons.dart';
 import '../utils/error_text.dart';
 
-/// 详情页操作栏：点赞与收藏。
+/// 详情页操作栏：点赞 / 收藏 / 分享。
 ///
-/// 只负责这一个实体的状态，不缓存他人数据。
+/// 图标式排版，不带文字，只保留点赞数。
 class PostActionBar extends StatefulWidget {
-  const PostActionBar({super.key, required this.postId, this.onLikeChanged});
+  const PostActionBar({
+    super.key,
+    required this.postId,
+    this.onLikeChanged,
+    this.onShare,
+  });
 
   final String postId;
   final ValueChanged<bool>? onLikeChanged;
+  final VoidCallback? onShare;
 
   @override
   State<PostActionBar> createState() => _PostActionBarState();
@@ -110,71 +116,71 @@ class _PostActionBarState extends State<PostActionBar> {
     if (_loading) {
       return const SizedBox(height: 48);
     }
+    final colors = context.colors;
     return Row(
       children: [
-        _Pill(
+        _IconAction(
           icon: _liked ? AppIcons.heartFilled : AppIcons.heart,
-          label: _likeCount > 0 ? '$_likeCount' : '点赞',
-          active: _liked,
-          activeColor: context.colors.danger,
+          color: _liked ? colors.danger : colors.muted,
           semanticLabel: _liked ? '取消点赞' : '点赞',
           onTap: _toggleLike,
         ),
-        const SizedBox(width: AppSpace.xl),
-        _Pill(
+        if (_likeCount > 0)
+          Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Text(
+              '$_likeCount',
+              style: AppText.bodySmall.copyWith(
+                color: _liked ? colors.danger : colors.muted,
+              ),
+            ),
+          ),
+        const SizedBox(width: AppSpace.xxl),
+        _IconAction(
           icon: _favorite ? AppIcons.bookmarkFilled : AppIcons.bookmark,
-          label: _favorite ? '已收藏' : '收藏',
-          active: _favorite,
-          activeColor: context.colors.ink,
+          color: _favorite ? colors.ink : colors.muted,
           semanticLabel: _favorite ? '取消收藏' : '收藏',
           onTap: _toggleFavorite,
+        ),
+        const SizedBox(width: AppSpace.xxl),
+        _IconAction(
+          icon: AppIcons.share,
+          color: colors.muted,
+          semanticLabel: '分享',
+          onTap: widget.onShare ?? () {},
         ),
       ],
     );
   }
 }
 
-class _Pill extends StatelessWidget {
-  const _Pill({
+class _IconAction extends StatelessWidget {
+  const _IconAction({
     required this.icon,
-    required this.label,
-    required this.active,
-    required this.activeColor,
+    required this.color,
     required this.semanticLabel,
     required this.onTap,
   });
 
   final IconData icon;
-  final String label;
-  final bool active;
-  final Color activeColor;
+  final Color color;
   final String semanticLabel;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final color = active ? activeColor : colors.muted;
     return Semantics(
       button: true,
-      selected: active,
       label: semanticLabel,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.sm),
+      child: InkResponse(
+        radius: 22,
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: AppSpace.xs,
             vertical: AppSpace.sm,
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 20, color: color),
-              const SizedBox(width: 6),
-              Text(label, style: AppText.bodySmall.copyWith(color: color)),
-            ],
-          ),
+          child: Icon(icon, size: 22, color: color),
         ),
       ),
     );

@@ -69,6 +69,16 @@ class ModerationService {
             .eq('id', row['target_id'])
             .maybeSingle();
       }
+      final target = enriched['target'] as Map<String, dynamic>?;
+      final authorId = target?['user_id'] as String?;
+      if (authorId != null && authorId.isNotEmpty) {
+        final author = await _client
+            .from('user_profiles')
+            .select('nickname')
+            .eq('id', authorId)
+            .maybeSingle();
+        enriched['author_nickname'] = (author?['nickname'] as String?)?.trim();
+      }
       result.add(enriched);
     }
     return result;
