@@ -7,11 +7,14 @@ import 'config.dart';
 import 'constants/geo.dart';
 import 'pages/home_tabs.dart';
 import 'pages/post_detail_page.dart';
+import 'services/circle_repository.dart';
 import 'services/deep_link.dart';
 import 'services/entity_service.dart';
+import 'services/shutdown_service.dart';
 import 'theme/app_spacing.dart';
 import 'theme/app_theme.dart';
 import 'utils/url_strategy.dart' as url_strategy;
+import 'widgets/app/shutdown_screen.dart';
 import 'widgets/app/splash_gate.dart';
 
 Future<void> main() async {
@@ -21,7 +24,9 @@ Future<void> main() async {
 
   // 地区数据先读内置文件，再由站点上的同名文件覆盖（改文件即可热更新）。
   await GeoRepository.instance.load();
+  await CircleRepository.instance.load();
   unawaited(GeoRepository.instance.refreshFromRemote());
+  unawaited(CircleRepository.instance.refreshFromRemote());
 
   if (!USE_LOCAL_DATA) {
     try {
@@ -36,6 +41,9 @@ Future<void> main() async {
   // 分享链接里的短码必须在 Flutter 接管浏览器历史之前读出，
   // 否则地址会被规范化成 "/"。
   final sharedPostKey = DeepLink.initialPostKey;
+
+  // 全站关停开关：启动时读一次，之后每 30 秒确认一次。
+  ShutdownService.start();
 
   runApp(MyApp(initialPostKey: sharedPostKey));
 }
@@ -112,7 +120,15 @@ class _MyAppState extends State<MyApp> {
           ),
         );
       },
-      home: const SplashGate(child: HomeTabs()),
+      home: ValueListenableBuilder<String?>(
+        valueListenable: ShutdownService.message,
+        builder: (context, closedMessage, _) {
+          if (closedMessage != null) {
+            return ShutdownScreen(message: closedMessage);
+          }
+          return const SplashGate(child: HomeTabs());
+        },
+      ),
     );
   }
 }

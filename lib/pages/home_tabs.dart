@@ -7,6 +7,7 @@ import '../theme/app_spacing.dart';
 import '../widgets/app/app_bottom_nav.dart';
 import '../widgets/app/immersive.dart';
 import 'activity_list_widget.dart';
+import 'circle_feed_widget.dart';
 import 'home_page.dart';
 import 'login_page.dart';
 import 'message_placeholder_page.dart';
@@ -62,11 +63,23 @@ class _HomeTabsState extends State<HomeTabs> {
       }
     }
     if (!mounted) return;
+    // 在「?圈」发布就必须知道发到哪个圈，没入圈时先提示。
+    final circle = homeCircleTabActive.value
+        ? activeCircleForPublish.value
+        : null;
+    if (homeCircleTabActive.value && circle == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('先入圈才能发布圈内帖子')));
+      return;
+    }
     final published = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            PublishHubPage(defaultActivity: homeActivityTabActive.value),
+        builder: (_) => PublishHubPage(
+          defaultActivity: homeActivityTabActive.value,
+          circle: circle,
+        ),
       ),
     );
     if (published == true) {

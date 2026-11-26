@@ -5,7 +5,7 @@ import '../models/base_entity.dart';
 import '../services/entity_service.dart';
 import '../widgets/app/app_icons.dart';
 import '../widgets/app/app_state_views.dart';
-import '../widgets/post_card.dart';
+import '../widgets/post_card_list.dart';
 import 'post_detail_page.dart';
 import 'publish_post_page.dart';
 
@@ -22,7 +22,6 @@ class _MyPostsPageState extends State<MyPostsPage> {
   bool _loading = true;
   String? _error;
   List<BaseEntity> _items = <BaseEntity>[];
-  Map<String, dynamic>? _profile;
 
   @override
   void initState() {
@@ -45,18 +44,13 @@ class _MyPostsPageState extends State<MyPostsPage> {
       _error = null;
     });
     try {
-      final results = await Future.wait(<Future<dynamic>>[
-        _entityService.fetchUserEntities(userId: uid, type: 'post'),
-        Supabase.instance.client
-            .from('user_profiles')
-            .select()
-            .eq('id', uid)
-            .maybeSingle(),
-      ]);
+      final items = await _entityService.fetchUserEntities(
+        userId: uid,
+        type: 'post',
+      );
       if (!mounted) return;
       setState(() {
-        _items = results[0] as List<BaseEntity>;
-        _profile = results[1] as Map<String, dynamic>?;
+        _items = items;
         _loading = false;
       });
     } catch (e) {
@@ -141,23 +135,13 @@ class _MyPostsPageState extends State<MyPostsPage> {
     }
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView.builder(
-        physics: const AlwaysScrollableScrollPhysics(),
+      child: PostCardList(
+        posts: _items,
+        showAuthor: false,
         padding: EdgeInsets.zero,
-        itemCount: _items.length,
-        itemBuilder: (context, index) {
-          final item = _items[index];
-          return PostCard(
-            post: item,
-            authorName: _profile?['nickname'] as String?,
-            authorAvatar: _profile?['avatar_url'] as String?,
-            region: _profile?['resident_region'] as String?,
-            resort: _profile?['resident_resort'] as String?,
-            onOpenDetail: () => _openDetail(item),
-            onEdit: () => _edit(item),
-            onDelete: () => _delete(item),
-          );
-        },
+        onOpenDetail: _openDetail,
+        onEdit: _edit,
+        onDelete: _delete,
       ),
     );
   }

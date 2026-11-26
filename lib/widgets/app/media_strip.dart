@@ -5,6 +5,7 @@ import '../../models/media_model.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
+import '../../utils/media_url.dart';
 import 'app_icons.dart';
 
 /// 帖子 / 活动的媒体区：横向滑动，视频显示缩略图与播放角标。
@@ -70,7 +71,7 @@ class MediaStrip extends StatelessWidget {
                         borderRadius: BorderRadius.circular(AppRadius.lg),
                         child: SizedBox(
                           width: itemWidth,
-                          child: _Preview(item: item),
+                          child: _Preview(item: item, displayWidth: itemWidth),
                         ),
                       ),
                     ),
@@ -105,9 +106,10 @@ class MediaStrip extends StatelessWidget {
 }
 
 class _Preview extends StatelessWidget {
-  const _Preview({required this.item});
+  const _Preview({required this.item, required this.displayWidth});
 
   final MediaModel item;
+  final double displayWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -118,11 +120,19 @@ class _Preview extends StatelessWidget {
               ? item.thumbnailUrl!.trim()
               : null)
         : item.url.trim();
+    // 卡片里只是预览，用 OSS 缩略图即可；点开看的才是原图。
+    final thumbUrl = previewUrl == null || previewUrl.isEmpty
+        ? null
+        : mediaThumb(
+            previewUrl,
+            width: (displayWidth * 2).round().clamp(320, 1600),
+            crop: false,
+          );
 
     return Stack(
       fit: StackFit.expand,
       children: [
-        if (previewUrl == null || previewUrl.isEmpty)
+        if (thumbUrl == null)
           Container(
             color: colors.soft,
             alignment: Alignment.center,
@@ -130,8 +140,9 @@ class _Preview extends StatelessWidget {
           )
         else
           CachedNetworkImage(
-            imageUrl: previewUrl,
+            imageUrl: thumbUrl,
             fit: BoxFit.cover,
+            fadeInDuration: const Duration(milliseconds: 150),
             placeholder: (_, __) => Container(color: colors.soft),
             errorWidget: (_, __, ___) => Container(
               color: colors.soft,

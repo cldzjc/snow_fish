@@ -15,6 +15,9 @@ class BaseEntity extends Equatable {
   /// 顶级评论数，由数据库触发器维护。
   final int commentCount;
 
+  /// 所属圈子 id；为 null 表示发在 sk社区。
+  final String? circleId;
+
   const BaseEntity({
     required this.id,
     required this.userId,
@@ -26,6 +29,7 @@ class BaseEntity extends Equatable {
     this.extraData = const {},
     this.media = const [],
     this.commentCount = 0,
+    this.circleId,
   });
 
   /// 从数据库行创建 BaseEntity
@@ -62,6 +66,9 @@ class BaseEntity extends Equatable {
           : null,
       extraData: extraData,
       commentCount: (json['comment_count'] as num?)?.toInt() ?? 0,
+      circleId: (json['circle_id'] as String?)?.trim().isNotEmpty == true
+          ? (json['circle_id'] as String).trim()
+          : null,
       media:
           (json['media'] as List?)?.map((m) {
             final map = m is Map<String, dynamic> ? m : m as Map;
@@ -167,6 +174,7 @@ class BaseEntity extends Equatable {
     Map<String, dynamic>? extraData,
     List<MediaModel>? media,
     int? commentCount,
+    String? circleId,
   }) {
     return BaseEntity(
       id: id ?? this.id,
@@ -179,6 +187,7 @@ class BaseEntity extends Equatable {
       extraData: extraData ?? this.extraData,
       media: media ?? this.media,
       commentCount: commentCount ?? this.commentCount,
+      circleId: circleId ?? this.circleId,
     );
   }
 
@@ -194,5 +203,6 @@ class BaseEntity extends Equatable {
     extraData,
     media,
     commentCount,
+    circleId,
   ];
 }

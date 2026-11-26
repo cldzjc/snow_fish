@@ -4,8 +4,12 @@ import '../../constants/geo.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
+import '../../utils/geo_format.dart';
 import 'app_button.dart';
 import 'app_icons.dart';
+
+export '../../utils/geo_format.dart'
+    show splitRegionPath, shortResortName, regionLeaf, shortRegionLabel;
 
 /// 选择结果：省 / 市 / 区路径 + 雪场。
 class GeoSelection {
@@ -23,32 +27,6 @@ class GeoSelection {
     }
     return '$region · $resort';
   }
-}
-
-/// 把已存路径拆回省 / 市 / 区。
-List<String> splitRegionPath(String? path) {
-  final value = path?.trim() ?? '';
-  if (value.isEmpty) return const <String>[];
-  final geo = GeoRepository.instance;
-  for (final province in geo.provinces) {
-    if (value == province.name) return <String>[province.name];
-    if (value.startsWith('${province.name}·')) {
-      return value.split('·');
-    }
-  }
-  return value.split('·');
-}
-
-/// 去掉「某某滑雪场」里的「滑雪场」后缀，只留场地名。
-String shortResortName(String value) {
-  var name = value.trim();
-  for (final suffix in const <String>['滑雪场', '滑雪度假区', '滑雪胜地']) {
-    if (name.length > suffix.length && name.endsWith(suffix)) {
-      name = name.substring(0, name.length - suffix.length).trim();
-      break;
-    }
-  }
-  return name;
 }
 
 /// 打开级联地区选择面板（左栏分类 + 右侧选项）。

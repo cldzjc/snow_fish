@@ -2,16 +2,17 @@ import 'package:flutter/material.dart';
 
 import '../models/base_entity.dart';
 import '../models/media_model.dart';
+import '../services/circle_repository.dart';
 import '../services/share_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
+import '../utils/geo_format.dart';
 import '../utils/time_utils.dart';
 import 'app/app_avatar.dart';
 import 'app/app_icons.dart';
 import 'app/app_sheet.dart';
 import 'app/media_strip.dart';
-import 'app/region_tag.dart';
 import 'app/status_chip.dart';
 
 /// 全站统一的帖子卡片。
@@ -90,6 +91,26 @@ class PostCard extends StatelessWidget {
     return content;
   }
 
+  /// 卡片右上角的位置：优先用发布时记下的地点，老帖子退回作者常驻地区。
+  String? get _cardRegion =>
+      (post.extraData['region_id'] as String?)?.trim().isNotEmpty == true
+      ? post.extraData['region_id'] as String
+      : region;
+
+  String? get _cardResort =>
+      (post.extraData['resort_id'] as String?)?.trim().isNotEmpty == true
+      ? post.extraData['resort_id'] as String
+      : resort;
+
+  /// 右上角实际要显示的文案；为空时不占位。
+  ///
+  /// 圈内帖子显示圈子名（富龙圈 / 崇礼圈），sk社区的帖子显示区县·雪场。
+  String get _regionLabel {
+    final circleTag = CircleRepository.instance.tagFor(post.circleId);
+    if (circleTag != null && circleTag.isNotEmpty) return circleTag;
+    return shortRegionLabel(region: _cardRegion, resort: _cardResort);
+  }
+
   Future<void> _openMenu(BuildContext context) async {
     await showAppSheet<void>(
       context,
@@ -165,40 +186,36 @@ class PostCard extends StatelessWidget {
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: onOpenProfile,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
                       children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.baseline,
-                          textBaseline: TextBaseline.alphabetic,
-                          children: [
-                            if (displayName != null)
-                              Flexible(
-                                child: Text(
-                                  displayName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: AppText.title.copyWith(
-                                    color: colors.ink,
-                                  ),
-                                ),
-                              ),
-                            if (displayName != null)
-                              const SizedBox(width: AppSpace.sm),
-                            Text(
-                              TimeUtils.formatRelativeTime(post.createdAt),
-                              style: AppText.meta.copyWith(color: colors.muted),
+                        if (displayName != null)
+                          Flexible(
+                            child: Text(
+                              displayName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppText.title.copyWith(color: colors.ink),
                             ),
-                          ],
+                          ),
+                        if (displayName != null)
+                          const SizedBox(width: AppSpace.sm),
+                        Text(
+                          TimeUtils.formatRelativeTime(post.createdAt),
+                          style: AppText.meta.copyWith(color: colors.muted),
                         ),
-                        if (region != null || resort != null) ...[
-                          const SizedBox(height: AppSpace.xs),
-                          RegionTag(region: region, resort: resort),
-                        ],
                       ],
                     ),
                   ),
                 ),
+                if (_regionLabel.isNotEmpty) ...[
+                  const SizedBox(width: AppSpace.sm),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 112),
+                    child: _CardTag(label: _regionLabel),
+                  ),
+                ],
                 if (_hasMenu)
                   Semantics(
                     button: true,
@@ -212,13 +229,21 @@ class PostCard extends StatelessWidget {
                 else
                   const SizedBox(width: AppSpace.md),
               ],
+            )
+          else if (_regionLabel.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(right: AppSpace.md),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: _CardTag(label: _regionLabel),
+              ),
             ),
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: onOpenDetail,
             child: Padding(
               padding: EdgeInsets.only(
-                top: showAuthor ? AppSpace.md : 0,
+                top: showAuthor || _regionLabel.isNotEmpty ? AppSpace.md : 0,
                 right: AppSpace.md,
               ),
               child: Column(
@@ -300,6 +325,24 @@ class PostCard extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// 卡片右上角的位置 / 圈子标签。
+class _CardTag extends StatelessWidget {
+  const _CardTag({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Text(
+      label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: AppText.meta.copyWith(color: colors.muted),
     );
   }
 }

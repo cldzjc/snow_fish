@@ -254,17 +254,11 @@ class CommentService {
           .maybeSingle();
 
       if (existing != null) {
-        // 已点赞，删除点赞
+        // 已点赞，删除点赞；like_count 由 interactions 上的触发器维护。
         await _client.from('interactions').delete().eq('id', existing['id']);
-
-        // 更新评论的点赞数
-        await _client.rpc(
-          'decrement_comment_likes',
-          params: {'comment_id': commentId},
-        );
         return false;
       } else {
-        // 未点赞，添加点赞
+        // 未点赞，添加点赞；like_count 由 interactions 上的触发器维护。
         await _client.from('interactions').insert({
           'user_id': currentUser.id,
           'target_type': 'comment',
@@ -273,12 +267,6 @@ class CommentService {
           'score': 1,
           'created_at': DateTime.now().toUtc().toIso8601String(),
         });
-
-        // 更新评论的点赞数
-        await _client.rpc(
-          'increment_comment_likes',
-          params: {'comment_id': commentId},
-        );
         return true;
       }
     } catch (e) {

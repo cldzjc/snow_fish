@@ -131,10 +131,16 @@ class MediaService {
       bytes = await _readFileBytes(file);
     }
 
+    // 压缩步骤会把图片重新编码成 JPEG，此时上报的 content-type 必须跟着改，
+    // 否则 OSS 会按原扩展名（png/heic 等）标注 Content-Type，浏览器无法显示。
+    final effectiveMime = mediaType == 'image' && _looksLikeJpeg(bytes)
+        ? 'image/jpeg'
+        : mimeType;
+
     // 3. 调用 Edge Function 获取上传 URL
     final uploadInfo = await _getUploadInfo(
       filename: p.basename(file.name),
-      contentType: mimeType,
+      contentType: effectiveMime,
       entityType: 'entity', // 使用通用 entity_type
       ownerId: userId,
       entityId: entityId,
@@ -149,7 +155,7 @@ class MediaService {
 
     // 4. 上传到 OSS
     print('   ☁️ 上传到 OSS...');
-    await _uploadFileBytes(bytes, uploadUrl, mimeType);
+    await _uploadFileBytes(bytes, uploadUrl, effectiveMime);
     print('   ✅ OSS 上传成功');
 
     // 5. 向 media 表插入记录，关联到 entity_id
@@ -410,6 +416,13 @@ class MediaService {
     }
   }
 }
+
+/// 判断字节流是否是 JPEG（FF D8 FF）。
+bool _looksLikeJpeg(Uint8List bytes) =>
+    bytes.length > 3 &&
+    bytes[0] == 0xFF &&
+    bytes[1] == 0xD8 &&
+    bytes[2] == 0xFF;
 
 // Top-level function for compute to compress images in a background isolate
 Uint8List _compressImageIsolate(Map<String, dynamic> args) {

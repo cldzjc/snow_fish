@@ -51,7 +51,9 @@ class ModerationService {
       if (row['target_type'] == 'entity') {
         enriched['target'] = await _client
             .from('entities')
-            .select('id, title, content, user_id, moderation_status, media(*)')
+            .select(
+              'id, title, content, user_id, moderation_status, pinned_at, media(*)',
+            )
             .eq('id', row['target_id'])
             .maybeSingle();
       } else if (row['target_type'] == 'comment') {
@@ -70,6 +72,42 @@ class ModerationService {
       result.add(enriched);
     }
     return result;
+  }
+
+  /// 「有错」：封禁用户并隐藏其全部内容（申诉通过后可恢复）。
+  Future<int> suspendUser({
+    required String userId,
+    required String reason,
+  }) async {
+    if (_client.auth.currentUser == null) throw StateError('请先登录');
+    final result = await _client.rpc(
+      'admin_suspend_user',
+      params: {'p_user_id': userId, 'p_reason': reason},
+    );
+    return (result as num?)?.toInt() ?? 0;
+  }
+
+  /// 「申诉通过」：解封并把因封号隐藏的内容恢复。
+  Future<int> restoreUser({
+    required String userId,
+    required String note,
+  }) async {
+    if (_client.auth.currentUser == null) throw StateError('请先登录');
+    final result = await _client.rpc(
+      'admin_restore_user',
+      params: {'p_user_id': userId, 'p_note': note},
+    );
+    return (result as num?)?.toInt() ?? 0;
+  }
+
+  /// 已封禁用户，供解封入口使用。
+  Future<List<Map<String, dynamic>>> loadSuspendedUsers() async {
+    final rows = await _client
+        .from('user_profiles')
+        .select('id, nickname, avatar_url, account_status_reason, updated_at')
+        .eq('account_status', 'suspended')
+        .order('updated_at', ascending: false);
+    return List<Map<String, dynamic>>.from(rows);
   }
 
   Future<void> resolveReport({

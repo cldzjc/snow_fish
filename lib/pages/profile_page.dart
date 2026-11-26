@@ -11,19 +11,20 @@ import '../services/profile_sync_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
-import '../utils/time_utils.dart';
+import '../utils/geo_format.dart';
+import '../utils/media_url.dart';
 import '../widgets/app/app_avatar.dart';
 import '../widgets/app/app_button.dart';
 import '../widgets/app/app_icons.dart';
 import '../widgets/app/app_state_views.dart';
 import '../widgets/app/region_tag.dart';
+import '../widgets/post_card_list.dart';
 import 'admin_center_page.dart';
 import 'edit_profile_page.dart';
 import 'login_page.dart';
 import 'my_content_page.dart';
 import 'my_posts_page.dart';
 import 'notifications_page.dart';
-import 'post_detail_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key, this.userId});
@@ -250,6 +251,10 @@ class _ProfilePageState extends State<ProfilePage> {
         ? profile!.bio!.trim()
         : '这个人还没有签名';
     final cover = profile?.backgroundUrl?.trim() ?? '';
+    final regionLabel = shortRegionLabel(
+      region: profile?.residentRegion,
+      resort: profile?.residentResort,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -259,7 +264,7 @@ class _ProfilePageState extends State<ProfilePage> {
           child: cover.isEmpty
               ? Container(color: colors.soft)
               : CachedNetworkImage(
-                  imageUrl: cover,
+                  imageUrl: mediaThumb(cover, width: 1080, crop: false),
                   fit: BoxFit.cover,
                   width: double.infinity,
                   placeholder: (_, __) => Container(color: colors.soft),
@@ -308,11 +313,30 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
               Text(name, style: AppText.display.copyWith(color: colors.ink)),
               const SizedBox(height: AppSpace.sm),
-              Text(bio, style: AppText.body.copyWith(color: colors.ink)),
-              const SizedBox(height: AppSpace.sm),
-              RegionTag(
-                region: profile?.residentRegion,
-                resort: profile?.residentResort,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      bio,
+                      style: AppText.body.copyWith(color: colors.ink),
+                    ),
+                  ),
+                  if (regionLabel.isNotEmpty) ...[
+                    const SizedBox(width: AppSpace.md),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 132),
+                        child: RegionTag(
+                          region: profile?.residentRegion,
+                          resort: profile?.residentResort,
+                          compact: true,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
               const SizedBox(height: AppSpace.lg),
             ],
@@ -392,105 +416,35 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Widget _buildPostSection() {
     final colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpace.xl,
-        AppSpace.xxl,
-        AppSpace.xl,
-        0,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpace.xl,
+            AppSpace.xxl,
+            AppSpace.xl,
+            0,
+          ),
+          child: Text(
             _isOwn ? '我发布的动态' : 'TA 发布的动态',
             style: AppText.title.copyWith(color: colors.ink),
           ),
-          const SizedBox(height: AppSpace.md),
-          if (_posts.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpace.xxl),
-              child: Center(
-                child: Text(
-                  '还没有发布动态',
-                  style: AppText.bodySmall.copyWith(color: colors.muted),
-                ),
-              ),
-            )
-          else
-            Container(
-              decoration: BoxDecoration(
-                border: Border(top: BorderSide(color: colors.line)),
-              ),
-              child: Column(
-                children: [
-                  for (final post in _posts)
-                    InkWell(
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => PostDetailPage(postId: post.id),
-                        ),
-                      ),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          border: Border(
-                            bottom: BorderSide(color: colors.line),
-                          ),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppSpace.lg,
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    post.title,
-                                    style: AppText.body.copyWith(
-                                      color: colors.ink,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: AppSpace.xs),
-                                  Text(
-                                    (post.content ?? '').trim().isEmpty
-                                        ? '无正文'
-                                        : post.content!.trim(),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: AppText.bodySmall.copyWith(
-                                      color: colors.muted,
-                                    ),
-                                  ),
-                                  const SizedBox(height: AppSpace.xs),
-                                  Text(
-                                    TimeUtils.formatRelativeTime(
-                                      post.createdAt,
-                                    ),
-                                    style: AppText.caption.copyWith(
-                                      color: colors.muted,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Icon(
-                              AppIcons.chevron,
-                              size: 18,
-                              color: colors.muted,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
+        ),
+        const SizedBox(height: AppSpace.md),
+        if (_posts.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpace.xxl),
+            child: Center(
+              child: Text(
+                '还没有发布动态',
+                style: AppText.bodySmall.copyWith(color: colors.muted),
               ),
             ),
-        ],
-      ),
+          )
+        else
+          PostCardList(posts: _posts, shrinkWrap: true, showAuthor: false),
+      ],
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/circle.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
@@ -9,19 +10,21 @@ import 'publish_post_page.dart';
 /// 发布入口。
 ///
 /// 规则（与产品约定一致）：
-/// - 在 sk社区点发布，直接进普通帖表单；
+/// - 在 sk社区点发布，发到 sk社区；
+/// - 在「?圈」点发布，发到当前正在看的圈；
 /// - 在约约约点发布，先选活动类型，再进对应表单。
 class PublishHubPage extends StatelessWidget {
-  const PublishHubPage({super.key, this.defaultActivity = false});
+  const PublishHubPage({super.key, this.defaultActivity = false, this.circle});
 
   final bool defaultActivity;
 
+  /// 从圈板块进发布时带上的圈子。
+  final Circle? circle;
+
   @override
   Widget build(BuildContext context) {
-    if (!defaultActivity) {
-      return const PublishPostPage();
-    }
-    return const _ActivityTypePicker();
+    if (defaultActivity) return const _ActivityTypePicker();
+    return PublishPostPage(circle: circle);
   }
 }
 

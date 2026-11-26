@@ -18,11 +18,14 @@ import 'video_player_page.dart';
 final ValueNotifier<int> feedRefreshTick = ValueNotifier<int>(0);
 
 class PostsListWidget extends StatefulWidget {
-  const PostsListWidget({super.key, this.topInset = 0});
+  const PostsListWidget({super.key, this.topInset = 0, this.circleIds});
 
   /// 列表顶部的留白（首页把顶栏做成浮层后，用它让首条内容落在顶栏下方）。
   /// 这段留白属于滚动内容，会和列表一起滚走，不会在顶部留下空白。
   final double topInset;
+
+  /// 非空时只展示这些圈子下的帖子；为空时是 sk社区。
+  final List<String>? circleIds;
 
   @override
   State<PostsListWidget> createState() => PostsListWidgetState();
@@ -95,6 +98,30 @@ class PostsListWidgetState extends State<PostsListWidget>
     }
   }
 
+  @override
+  void didUpdateWidget(covariant PostsListWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_circleKey(oldWidget.circleIds) != _circleKey(widget.circleIds)) {
+      _loadInitial();
+    }
+  }
+
+  static String _circleKey(List<String>? ids) =>
+      (ids ?? const <String>[]).join('|');
+
+  bool get _isCircleFeed => (widget.circleIds ?? const <String>[]).isNotEmpty;
+
+  Future<List<BaseEntity>> _fetchPage(int offset) {
+    if (_isCircleFeed) {
+      return _entityService.fetchCirclePosts(
+        circleIds: widget.circleIds!,
+        limit: _pageSize,
+        offset: offset,
+      );
+    }
+    return _entityService.fetchSkCommunity(limit: _pageSize, offset: offset);
+  }
+
   Future<void> _loadInitial({
     bool showSkeleton = true,
     bool forceProfiles = false,
@@ -109,7 +136,7 @@ class PostsListWidgetState extends State<PostsListWidget>
       setState(() => _error = null);
     }
     try {
-      final posts = await _entityService.fetchSkCommunity(limit: _pageSize);
+      final posts = await _fetchPage(0);
       if (!mounted) return;
       final known = _posts.map((item) => item.id).toSet();
       setState(() {
@@ -153,10 +180,7 @@ class PostsListWidgetState extends State<PostsListWidget>
     if (_loadingMore || !_hasMore || _initialLoading) return;
     setState(() => _loadingMore = true);
     try {
-      final more = await _entityService.fetchSkCommunity(
-        limit: _pageSize,
-        offset: _posts.length,
-      );
+      final more = await _fetchPage(_posts.length);
       if (!mounted) return;
       final existing = _posts.map((item) => item.id).toSet();
       final fresh = more.where((item) => !existing.contains(item.id)).toList();

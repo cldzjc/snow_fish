@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../models/base_entity.dart';
 import '../media_service.dart';
 
@@ -40,17 +42,13 @@ class EntityService {
   }
 
   /// 获取 sk社区帖子，置顶内容优先（仅首页第一页包含置顶）
+  ///
+  /// 圈子里的帖子不进 sk社区，用 `circle_id is null` 把两者分开。
   Future<List<BaseEntity>> fetchSkCommunity({
     int limit = 20,
     int offset = 0,
   }) async {
-    final normal = await _client
-        .from('entities')
-        .select('*, media(*)')
-        .eq('entity_type', 'post')
-        .eq('moderation_status', 'visible')
-        .order('created_at', ascending: false)
-        .range(offset, offset + limit - 1);
+    final normal = await _communityPage(limit: limit, offset: offset);
     final normalItems = (normal as List)
         .map((item) => BaseEntity.fromJson(item as Map<String, dynamic>))
         .toList();
@@ -58,15 +56,7 @@ class EntityService {
     if (offset > 0) return normalItems;
 
     final now = DateTime.now().toUtc().toIso8601String();
-    final pinned = await _client
-        .from('entities')
-        .select('*, media(*)')
-        .eq('entity_type', 'post')
-        .eq('moderation_status', 'visible')
-        .not('pinned_at', 'is', null)
-        .or('pinned_until.is.null,pinned_until.gt.$now')
-        .order('pinned_at', ascending: false)
-        .range(0, 49);
+    final pinned = await _communityPinned(now);
     final pinnedItems = (pinned as List)
         .map((item) => BaseEntity.fromJson(item as Map<String, dynamic>))
         .toList();
@@ -77,6 +67,83 @@ class EntityService {
       ...pinnedItems,
       ...normalItems.where((item) => !pinnedIds.contains(item.id)),
     ];
+  }
+
+  /// sk社区列表查询。
+  ///
+  /// 如果 `entities.circle_id` 还没建（圈子迁移没跑），退回不过滤的旧查询，
+  /// 保证首页信息流不会因为字段缺失整屏报错。
+  Future<dynamic> _communityPage({
+    required int limit,
+    required int offset,
+  }) async {
+    try {
+      return await _client
+          .from('entities')
+          .select('*, media(*)')
+          .eq('entity_type', 'post')
+          .eq('moderation_status', 'visible')
+          .isFilter('circle_id', null)
+          .order('created_at', ascending: false)
+          .range(offset, offset + limit - 1);
+    } catch (error) {
+      debugPrint('sk社区查询（含圈子过滤）失败，回退基础查询: $error');
+      return await _client
+          .from('entities')
+          .select('*, media(*)')
+          .eq('entity_type', 'post')
+          .eq('moderation_status', 'visible')
+          .order('created_at', ascending: false)
+          .range(offset, offset + limit - 1);
+    }
+  }
+
+  Future<dynamic> _communityPinned(String now) async {
+    try {
+      return await _client
+          .from('entities')
+          .select('*, media(*)')
+          .eq('entity_type', 'post')
+          .eq('moderation_status', 'visible')
+          .isFilter('circle_id', null)
+          .not('pinned_at', 'is', null)
+          .or('pinned_until.is.null,pinned_until.gt.$now')
+          .order('pinned_at', ascending: false)
+          .range(0, 49);
+    } catch (error) {
+      debugPrint('置顶查询（含圈子过滤）失败，回退基础查询: $error');
+      return await _client
+          .from('entities')
+          .select('*, media(*)')
+          .eq('entity_type', 'post')
+          .eq('moderation_status', 'visible')
+          .not('pinned_at', 'is', null)
+          .or('pinned_until.is.null,pinned_until.gt.$now')
+          .order('pinned_at', ascending: false)
+          .range(0, 49);
+    }
+  }
+
+  /// 获取圈子信息流。
+  ///
+  /// [circleIds] 由 CircleRepository.scopeIds 给出：区县圈会把旗下雪场圈一起带上。
+  Future<List<BaseEntity>> fetchCirclePosts({
+    required List<String> circleIds,
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    if (circleIds.isEmpty) return const <BaseEntity>[];
+    final rows = await _client
+        .from('entities')
+        .select('*, media(*)')
+        .eq('entity_type', 'post')
+        .eq('moderation_status', 'visible')
+        .inFilter('circle_id', circleIds)
+        .order('created_at', ascending: false)
+        .range(offset, offset + limit - 1);
+    return (rows as List)
+        .map((item) => BaseEntity.fromJson(item as Map<String, dynamic>))
+        .toList();
   }
 
   /// 获取约约约活动列表
@@ -297,6 +364,7 @@ class EntityService {
     required String title,
     String? content,
     Map<String, dynamic>? extraData,
+    String? circleId,
   }) async {
     try {
       final currentUser = _client.auth.currentUser;
@@ -313,6 +381,7 @@ class EntityService {
         'extra_data': extraData ?? {},
         'created_at': now,
         'updated_at': now,
+        if (circleId != null && circleId.isNotEmpty) 'circle_id': circleId,
       };
 
       final response = await _client
@@ -336,6 +405,7 @@ class EntityService {
     String? content,
     Map<String, dynamic>? extraData,
     List<String>? mediaUrls, // 直接使用的媒体 URL 列表
+    String? circleId,
   }) async {
     try {
       // 1. 创建实体
@@ -344,6 +414,7 @@ class EntityService {
         title: title,
         content: content,
         extraData: extraData,
+        circleId: circleId,
       );
 
       // 2. 如果有媒体 URL，创建媒体记录
@@ -378,6 +449,7 @@ class EntityService {
     String? title,
     String? content,
     Map<String, dynamic>? extraData,
+    String? circleId,
   }) async {
     try {
       final updates = <String, dynamic>{
@@ -387,6 +459,9 @@ class EntityService {
       if (title != null) updates['title'] = title;
       if (content != null) updates['content'] = content;
       if (extraData != null) updates['extra_data'] = extraData;
+      if (circleId != null) {
+        updates['circle_id'] = circleId.isEmpty ? null : circleId;
+      }
 
       final response = await _client
           .from('entities')
@@ -623,13 +698,16 @@ class EntityService {
       }
 
       // 2. 检查是否已有该评分记录
+      // 写入只使用 like / dislike：interactions 的 RLS 只放行这两个（外加 favorite），
+      // 历史数据里的 blog_good / product_good 仍然按同一语义读出来。
+      final type = _voteType(score);
       final existing = await _client
           .from('interactions')
           .select()
           .eq('user_id', currentUser.id)
           .eq('target_type', 'entity')
           .eq('entity_id', entityId)
-          .eq('interaction_type', _getInteractionType(entity.entityType, score))
+          .inFilter('interaction_type', _voteTypeAliases(score))
           .maybeSingle();
 
       if (existing != null) {
@@ -639,10 +717,7 @@ class EntityService {
       } else {
         // 不存在，创建（点赞）
         // 首先删除相反的评分（如果存在）
-        final oppositeType = _getInteractionType(
-          entity.entityType,
-          score == 5 ? 1 : 5,
-        );
+        final oppositeTypes = _voteTypeAliases(score == 5 ? 1 : 5);
 
         await _client
             .from('interactions')
@@ -650,14 +725,14 @@ class EntityService {
             .eq('user_id', currentUser.id)
             .eq('target_type', 'entity')
             .eq('entity_id', entityId)
-            .eq('interaction_type', oppositeType);
+            .inFilter('interaction_type', oppositeTypes);
 
         // 插入新的评分
         await _client.from('interactions').insert({
           'user_id': currentUser.id,
           'target_type': 'entity',
           'entity_id': entityId,
-          'interaction_type': _getInteractionType(entity.entityType, score),
+          'interaction_type': type,
           'score': score,
           'created_at': DateTime.now().toUtc().toIso8601String(),
         });
@@ -740,7 +815,7 @@ class EntityService {
           .eq('user_id', currentUser.id)
           .eq('target_type', 'entity')
           .eq('entity_id', entityId)
-          .eq('interaction_type', _getInteractionType(entity.entityType, score))
+          .inFilter('interaction_type', _voteTypeAliases(score))
           .maybeSingle();
 
       return existing != null;
@@ -814,19 +889,17 @@ class EntityService {
 
   // ============ 辅助方法 ============
 
-  /// 根据实体类型和分值获取交互类型文本
-  String _getInteractionType(String entityType, double score) {
-    final isPositive = score == 5;
+  /// 写入 interactions 时使用的交互类型。
+  ///
+  /// 数据库 RLS 策略 interactions_insert_self 只放行
+  /// entity 的 like / dislike / favorite 与评论的 comment_like，
+  /// 所以点赞统一写 like，不再按实体类型派生 blog_good / product_good。
+  String _voteType(double score) => score == 5 ? 'like' : 'dislike';
 
-    switch (entityType) {
-      case 'product':
-        return isPositive ? 'product_good' : 'product_bad';
-      case 'blog':
-      case 'post':
-        return isPositive ? 'blog_good' : 'blog_bad';
-      default:
-        return isPositive ? 'like' : 'dislike';
-    }
+  /// 读取历史记录时要兼容旧的交互类型。
+  List<String> _voteTypeAliases(double score) {
+    if (score == 5) return const ['like', 'blog_good', 'product_good'];
+    return const ['dislike', 'blog_bad', 'product_bad'];
   }
 
   /// 获取交互类型的语义化文本

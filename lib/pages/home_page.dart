@@ -3,6 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../constants/geo.dart';
+import '../models/refresh_result.dart';
 import '../services/my_profile_store.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_typography.dart';
@@ -13,12 +14,16 @@ import '../widgets/app/geo_picker_sheet.dart';
 import '../widgets/app/immersive.dart';
 import '../widgets/app/lottie_pull_refresh.dart';
 import 'activity_list_widget.dart';
+import 'circle_feed_widget.dart';
 import 'login_page.dart';
 import 'posts_list_widget.dart';
 import 'profile_page.dart';
 
 /// 首页当前是否停留在「约约约」，供底部发布入口判断默认发布类型。
 final ValueNotifier<bool> homeActivityTabActive = ValueNotifier<bool>(false);
+
+/// 首页当前是否停留在「圈」，发布时据此决定归属。
+final ValueNotifier<bool> homeCircleTabActive = ValueNotifier<bool>(false);
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -29,8 +34,6 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage>
     with SingleTickerProviderStateMixin {
-  static const List<String> _tabs = <String>['sk社区', '约约约'];
-
   static const double _brandBarHeight = 58;
   static const double _tabsHeight = 42;
   static const double headerHeight = _brandBarHeight + _tabsHeight;
@@ -39,6 +42,8 @@ class _HomePageState extends State<HomePage>
       GlobalKey<PostsListWidgetState>();
   final GlobalKey<ActivityListWidgetState> _activityKey =
       GlobalKey<ActivityListWidgetState>();
+  final GlobalKey<CircleFeedWidgetState> _circleKey =
+      GlobalKey<CircleFeedWidgetState>();
 
   /// 顶栏 logo 与下拉刷新共用同一个进度：0 = 完整 logo，0.44 = 擦净。
   late final AnimationController _brandAnim = AnimationController(
@@ -52,13 +57,15 @@ class _HomePageState extends State<HomePage>
   @override
   void initState() {
     super.initState();
-    homeActivityTabActive.value = _index == 1;
+    homeActivityTabActive.value = false;
+    homeCircleTabActive.value = false;
     MyProfileStore.load();
   }
 
   @override
   void dispose() {
     homeActivityTabActive.value = false;
+    homeCircleTabActive.value = false;
     _brandAnim.dispose();
     super.dispose();
   }
@@ -66,17 +73,33 @@ class _HomePageState extends State<HomePage>
   void _select(int index) {
     if (index == _index) return;
     setState(() => _index = index);
-    homeActivityTabActive.value = index == 1;
+    homeActivityTabActive.value = index == 2;
+    homeCircleTabActive.value = index == 1;
     revealChrome();
+  }
+
+  /// Tab 文案：中间那个显示当前浏览的圈，没入圈时是「?圈」。
+  List<String> _tabLabels() {
+    final circle =
+        activeCircleForPublish.value ?? MyProfileStore.circle?.district;
+    return <String>['sk社区', circle?.label ?? '?圈', '约约约'];
   }
 
   /// 下拉刷新当前板块，完成后提示「新增了几条」。
   Future<void> _refreshCurrent() async {
-    final result = _index == 1
-        ? await _activityKey.currentState?.refreshNow()
-        : await _postsKey.currentState?.refreshNow();
+    final RefreshResult? result;
+    final String unit;
+    if (_index == 2) {
+      result = await _activityKey.currentState?.refreshNow();
+      unit = '个活动';
+    } else if (_index == 1) {
+      result = await _circleKey.currentState?.refreshNow();
+      unit = '篇帖子';
+    } else {
+      result = await _postsKey.currentState?.refreshNow();
+      unit = '篇帖子';
+    }
     if (!mounted || result == null) return;
-    final unit = _index == 1 ? '个活动' : '篇帖子';
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
@@ -147,49 +170,56 @@ class _HomePageState extends State<HomePage>
     return Scaffold(
       body: SafeArea(
         bottom: false,
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: LottiePullRefresh(
-                controller: _brandAnim,
-                onRefresh: _refreshCurrent,
-                // 顶栏是浮层，留白放进列表自身的 padding，
-                // 这样它会随内容滚走，不会在顶部留下一条空白。
-                child: IndexedStack(
-                  index: _index,
-                  children: [
-                    PostsListWidget(key: _postsKey, topInset: headerHeight),
-                    ActivityListWidget(
-                      key: _activityKey,
-                      topInset: headerHeight,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              top: 0,
-              child: ImmersiveHide(
-                hideOffset: const Offset(0, -headerHeight),
-                child: Container(
-                  color: colors.paper,
-                  child: Column(
+        child: AnimatedBuilder(
+          animation: Listenable.merge([
+            MyProfileStore.profile,
+            activeCircleForPublish,
+          ]),
+          builder: (context, _) => Stack(
+            children: [
+              Positioned.fill(
+                child: LottiePullRefresh(
+                  controller: _brandAnim,
+                  onRefresh: _refreshCurrent,
+                  // 顶栏是浮层，留白放进列表自身的 padding，
+                  // 这样它会随内容滚走，不会在顶部留下一条空白。
+                  child: IndexedStack(
+                    index: _index,
                     children: [
-                      _buildBrandBar(),
-                      AppTabs(
-                        tabs: _tabs,
-                        index: _index,
-                        onChanged: _select,
-                        height: _tabsHeight,
+                      PostsListWidget(key: _postsKey, topInset: headerHeight),
+                      CircleFeedWidget(key: _circleKey, topInset: headerHeight),
+                      ActivityListWidget(
+                        key: _activityKey,
+                        topInset: headerHeight,
                       ),
                     ],
                   ),
                 ),
               ),
-            ),
-          ],
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                child: ImmersiveHide(
+                  hideOffset: const Offset(0, -headerHeight),
+                  child: Container(
+                    color: colors.paper,
+                    child: Column(
+                      children: [
+                        _buildBrandBar(),
+                        AppTabs(
+                          tabs: _tabLabels(),
+                          index: _index,
+                          onChanged: _select,
+                          height: _tabsHeight,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

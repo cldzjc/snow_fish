@@ -5,8 +5,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../constants/geo.dart';
 import '../media_service.dart';
 import '../models/base_entity.dart';
+import '../models/circle.dart';
 import '../models/media_model.dart';
 import '../services/entity_service.dart';
+import '../services/circle_repository.dart';
+import '../services/my_profile_store.dart';
 import '../services/publish_draft_store.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
@@ -18,10 +21,18 @@ import '../widgets/app/app_icons.dart';
 import 'login_page.dart';
 
 class PublishPostPage extends StatefulWidget {
-  const PublishPostPage({super.key, this.initialPost, this.initialEntityType});
+  const PublishPostPage({
+    super.key,
+    this.initialPost,
+    this.initialEntityType,
+    this.circle,
+  });
 
   final BaseEntity? initialPost;
   final String? initialEntityType;
+
+  /// 发到哪个圈；null 表示发到 sk社区。
+  final Circle? circle;
 
   @override
   State<PublishPostPage> createState() => _PublishPostPageState();
@@ -138,6 +149,23 @@ class _PublishPostPageState extends State<PublishPostPage> {
   }
 
   bool get _isLoggedIn => Supabase.instance.client.auth.currentSession != null;
+
+  /// 发帖归属：活动只能进 sk社区，普通帖按进入发布页时所在的板块决定。
+  String? get _targetCircleId {
+    if (_isActivity) return null;
+    if (widget.initialPost != null) return widget.initialPost!.circleId;
+    return widget.circle?.id;
+  }
+
+  /// 发布页副标题：明确告诉用户这条内容会去哪里。
+  String get _publishTargetLabel {
+    if (_isActivity) return '发起活动会通知到同地区的雪友';
+    final circle =
+        widget.circle ??
+        CircleRepository.instance.byId(widget.initialPost?.circleId);
+    if (circle != null) return '发布到 ${circle.label}，只有同圈雪友能看到';
+    return '发布到 sk社区，所有人可见';
+  }
 
   String get _pageTitle {
     if (widget.initialPost != null) {
@@ -264,6 +292,29 @@ class _PublishPostPageState extends State<PublishPostPage> {
       base['activity_status'] =
           base['activity_status']?.toString() ?? 'recruiting';
       extraData = base;
+    } else {
+      // 普通帖子也记下「发布时所在地点」：卡片右上角展示区县·雪场，
+      // 后续圈子板块也按这个归属。老帖子没有这份数据时回退到作者常驻地区。
+      final profile = MyProfileStore.value;
+      final region =
+          (profile?['resident_region'] as String?)?.trim() ?? _region.trim();
+      final resort =
+          (profile?['resident_resort'] as String?)?.trim() ??
+          _resortController.text.trim();
+      final base = Map<String, dynamic>.from(
+        widget.initialPost?.extraData ?? const <String, dynamic>{},
+      );
+      if (region.isEmpty) {
+        base.remove('region_id');
+      } else {
+        base['region_id'] = region;
+      }
+      if (resort.isEmpty) {
+        base.remove('resort_id');
+      } else {
+        base['resort_id'] = resort;
+      }
+      if (base.isNotEmpty) extraData = base;
     }
 
     setState(() => _loading = true);
@@ -276,6 +327,7 @@ class _PublishPostPageState extends State<PublishPostPage> {
               title: title,
               content: _contentController.text.trim(),
               extraData: extraData ?? const <String, dynamic>{},
+              circleId: _targetCircleId,
             )
           : await _entityService.updateEntity(
               entityId: widget.initialPost!.id,
@@ -471,7 +523,7 @@ class _PublishPostPageState extends State<PublishPostPage> {
               Text(name, style: AppText.title.copyWith(color: colors.ink)),
               const SizedBox(height: AppSpace.xs),
               Text(
-                _isActivity ? '发起活动会通知到同地区的雪友' : '发布到 sk社区，所有人可见',
+                _publishTargetLabel,
                 style: AppText.caption.copyWith(color: colors.muted),
               ),
             ],
