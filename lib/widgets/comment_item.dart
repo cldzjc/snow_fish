@@ -274,14 +274,15 @@ class _CommentItemState extends State<CommentItem> {
                       children: [
                         _SmallAction(
                           icon: _liked ? AppIcons.heartFilled : AppIcons.heart,
-                          label: _likeCount > 0 ? '$_likeCount' : '赞',
+                          semanticsLabel: _liked ? '取消点赞' : '点赞',
+                          count: _likeCount > 0 ? '$_likeCount' : null,
                           active: _liked,
                           onTap: _toggleLike,
                         ),
-                        const SizedBox(width: AppSpace.lg),
+                        const SizedBox(width: AppSpace.md),
                         _SmallAction(
                           icon: AppIcons.comment,
-                          label: '回复',
+                          semanticsLabel: '回复',
                           onTap: widget.onReplyPressed ?? () {},
                         ),
                       ],
@@ -335,13 +336,15 @@ class _CommentItemState extends State<CommentItem> {
 class _SmallAction extends StatelessWidget {
   const _SmallAction({
     required this.icon,
-    required this.label,
+    required this.semanticsLabel,
     required this.onTap,
+    this.count,
     this.active = false,
   });
 
   final IconData icon;
-  final String label;
+  final String semanticsLabel;
+  final String? count;
   final VoidCallback onTap;
   final bool active;
 
@@ -351,21 +354,23 @@ class _SmallAction extends StatelessWidget {
     final color = active ? colors.danger : colors.muted;
     return Semantics(
       button: true,
-      label: label,
+      label: semanticsLabel,
       child: InkWell(
         borderRadius: BorderRadius.circular(AppRadius.sm),
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(
-            horizontal: AppSpace.xs,
+            horizontal: 4,
             vertical: AppSpace.xs,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon, size: 16, color: color),
-              const SizedBox(width: 4),
-              Text(label, style: AppText.caption.copyWith(color: color)),
+              if (count != null) ...[
+                const SizedBox(width: 3),
+                Text(count!, style: AppText.caption.copyWith(color: color)),
+              ],
             ],
           ),
         ),

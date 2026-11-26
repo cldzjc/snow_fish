@@ -331,7 +331,7 @@ class PostCard extends StatelessWidget {
                     active: liked,
                     onTap: onToggleLike!,
                   ),
-                if (onToggleLike != null) const SizedBox(width: AppSpace.xxl),
+                if (onToggleLike != null) const SizedBox(width: AppSpace.md),
                 if (showCommentAction)
                   _CardAction(
                     icon: AppIcons.comment,
@@ -342,7 +342,7 @@ class PostCard extends StatelessWidget {
                     onTap: onOpenDetail,
                   ),
                 if (showShare) ...[
-                  const SizedBox(width: AppSpace.xxl),
+                  const SizedBox(width: AppSpace.md),
                   _CardAction(
                     icon: AppIcons.share,
                     semanticsLabel: '分享',
@@ -403,15 +403,15 @@ class _CardAction extends StatelessWidget {
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(
-            horizontal: AppSpace.sm,
+            horizontal: 6,
             vertical: AppSpace.sm,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 20, color: color),
+              Icon(icon, size: 18, color: color),
               if (count != null) ...[
-                const SizedBox(width: 5),
+                const SizedBox(width: 4),
                 Text(count!, style: AppText.bodySmall.copyWith(color: color)),
               ],
             ],

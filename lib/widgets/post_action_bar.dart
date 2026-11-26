@@ -127,7 +127,7 @@ class _PostActionBarState extends State<PostActionBar> {
         ),
         if (_likeCount > 0)
           Padding(
-            padding: const EdgeInsets.only(left: 4),
+            padding: const EdgeInsets.only(left: 3),
             child: Text(
               '$_likeCount',
               style: AppText.bodySmall.copyWith(
@@ -135,14 +135,14 @@ class _PostActionBarState extends State<PostActionBar> {
               ),
             ),
           ),
-        const SizedBox(width: AppSpace.xxl),
+        const SizedBox(width: AppSpace.md),
         _IconAction(
           icon: _favorite ? AppIcons.bookmarkFilled : AppIcons.bookmark,
           color: _favorite ? colors.ink : colors.muted,
           semanticLabel: _favorite ? '取消收藏' : '收藏',
           onTap: _toggleFavorite,
         ),
-        const SizedBox(width: AppSpace.xxl),
+        const SizedBox(width: AppSpace.md),
         _IconAction(
           icon: AppIcons.share,
           color: colors.muted,
@@ -173,14 +173,14 @@ class _IconAction extends StatelessWidget {
       button: true,
       label: semanticLabel,
       child: InkResponse(
-        radius: 22,
+        radius: 20,
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(
-            horizontal: AppSpace.xs,
+            horizontal: 6,
             vertical: AppSpace.sm,
           ),
-          child: Icon(icon, size: 22, color: color),
+          child: Icon(icon, size: 18, color: color),
         ),
       ),
     );
