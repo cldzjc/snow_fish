@@ -6,6 +6,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import 'app_button.dart';
+import '../../utils/error_text.dart';
 
 /// 全站关停时的白屏提示。
 ///
@@ -60,9 +61,9 @@ class _ShutdownScreenState extends State<ShutdownScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() => _working = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('解除失败：$error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(error, fallback: '解除失败'))),
+      );
     }
   }
 

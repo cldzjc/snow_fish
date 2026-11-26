@@ -13,6 +13,7 @@ import 'image_gallery_page.dart';
 import 'post_detail_page.dart';
 import 'profile_page.dart';
 import 'video_player_page.dart';
+import '../utils/error_text.dart';
 
 /// 发布或删除后触发列表刷新（+1）。
 final ValueNotifier<int> feedRefreshTick = ValueNotifier<int>(0);
@@ -280,9 +281,9 @@ class PostsListWidgetState extends State<PostsListWidget>
         }
         _likeCounts[post.id] = countBefore;
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('操作失败：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '操作失败'))),
+      );
     } finally {
       _likeInFlight.remove(post.id);
     }

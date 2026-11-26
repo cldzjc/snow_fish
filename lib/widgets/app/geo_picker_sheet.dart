@@ -258,7 +258,7 @@ class _GeoPickerSheetState extends State<_GeoPickerSheet> {
     return step == _GeoStep.resort ? shortResortName(value) : value;
   }
 
-  bool get _canConfirm => _province.isNotEmpty;
+  bool get _canConfirm => _province.isNotEmpty && _district.isNotEmpty;
 
   String get _preview {
     final region = GeoRepository.joinPath(_province, _city, _district);
@@ -409,7 +409,7 @@ class _GeoPickerSheetState extends State<_GeoPickerSheet> {
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
-                          _canConfirm ? _preview : '至少选择省份',
+                          _canConfirm ? _preview : '至少选择到区县',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: AppText.bodySmall.copyWith(
@@ -557,11 +557,7 @@ class _OptionRow extends StatelessWidget {
               width: 20,
               child: active
                   ? Icon(AppIcons.check, size: 17, color: colors.ink)
-                  : Icon(
-                      isResort ? AppIcons.mountain : AppIcons.chevron,
-                      size: 15,
-                      color: colors.line,
-                    ),
+                  : Icon(AppIcons.chevron, size: 15, color: colors.line),
             ),
             const SizedBox(width: AppSpace.sm),
             Expanded(

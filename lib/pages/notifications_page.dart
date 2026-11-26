@@ -9,6 +9,7 @@ import '../widgets/app/app_icons.dart';
 import '../widgets/app/app_state_views.dart';
 import 'login_page.dart';
 import 'post_detail_page.dart';
+import '../utils/error_text.dart';
 
 /// 底部导航红点监听的未读数量。
 final ValueNotifier<int> notificationUnreadCount = ValueNotifier<int>(0);
@@ -108,9 +109,9 @@ class _NotificationsPageState extends State<NotificationsPage>
       await _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('操作失败：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '操作失败'))),
+      );
     }
   }
 

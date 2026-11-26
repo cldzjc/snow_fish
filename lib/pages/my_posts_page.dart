@@ -8,6 +8,7 @@ import '../widgets/app/app_state_views.dart';
 import '../widgets/post_card_list.dart';
 import 'post_detail_page.dart';
 import 'publish_post_page.dart';
+import '../utils/error_text.dart';
 
 class MyPostsPage extends StatefulWidget {
   const MyPostsPage({super.key});
@@ -90,9 +91,9 @@ class _MyPostsPageState extends State<MyPostsPage> {
       await _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('删除失败：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '删除失败'))),
+      );
     }
   }
 

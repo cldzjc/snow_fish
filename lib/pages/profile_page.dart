@@ -25,6 +25,7 @@ import 'login_page.dart';
 import 'my_content_page.dart';
 import 'my_posts_page.dart';
 import 'notifications_page.dart';
+import '../utils/error_text.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key, this.userId});
@@ -133,9 +134,9 @@ class _ProfilePageState extends State<ProfilePage> {
       if (mounted) setState(() {});
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('退出失败：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '退出失败'))),
+      );
     }
   }
 
@@ -168,9 +169,9 @@ class _ProfilePageState extends State<ProfilePage> {
       ).showSnackBar(const SnackBar(content: Text('已拉黑该用户')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('操作失败：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '操作失败'))),
+      );
     }
   }
 

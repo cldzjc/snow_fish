@@ -179,7 +179,7 @@ class ActivityListWidgetState extends State<ActivityListWidget>
       return const AppStateView(
         icon: AppIcons.mountain,
         title: '还没有活动',
-        description: '换个地区，或者发起一次新的相约。',
+        description: '还没有人发起，你可以做第一个。',
       );
     }
     return ListView.separated(

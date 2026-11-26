@@ -18,6 +18,7 @@ import 'circle_feed_widget.dart';
 import 'login_page.dart';
 import 'posts_list_widget.dart';
 import 'profile_page.dart';
+import '../utils/error_text.dart';
 
 /// 首页当前是否停留在「约约约」，供底部发布入口判断默认发布类型。
 final ValueNotifier<bool> homeActivityTabActive = ValueNotifier<bool>(false);
@@ -158,9 +159,9 @@ class _HomePageState extends State<HomePage>
         );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('地点更新失败：$error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(error, fallback: '地点更新失败'))),
+      );
     }
   }
 

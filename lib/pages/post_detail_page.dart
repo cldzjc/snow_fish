@@ -27,6 +27,7 @@ import 'login_page.dart';
 import 'profile_page.dart';
 import 'publish_post_page.dart';
 import 'video_player_page.dart';
+import '../utils/error_text.dart';
 
 class PostDetailPage extends StatefulWidget {
   const PostDetailPage({super.key, required this.postId});
@@ -190,6 +191,55 @@ class _PostDetailPageState extends State<PostDetailPage> {
     await _loadComments();
   }
 
+  /// 右上角「更多」：分享 / 举报 / 编辑 / 删除都收在这里，避免一排图标误触。
+  Future<void> _openActions() async {
+    final post = _post;
+    if (post == null) return;
+    await showAppSheet<void>(
+      context,
+      title: '帖子操作',
+      builder: (sheetContext) => Column(
+        children: [
+          _DetailAction(
+            icon: AppIcons.share,
+            label: '分享',
+            onTap: () {
+              Navigator.of(sheetContext).pop();
+              ShareService.shareEntity(context, post);
+            },
+          ),
+          _DetailAction(
+            icon: AppIcons.flag,
+            label: '举报',
+            onTap: () {
+              Navigator.of(sheetContext).pop();
+              _report(targetType: 'entity', targetId: widget.postId);
+            },
+          ),
+          if (_isOwn) ...[
+            _DetailAction(
+              icon: AppIcons.edit,
+              label: '编辑',
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                _editPost();
+              },
+            ),
+            _DetailAction(
+              icon: AppIcons.trash,
+              label: '删除',
+              danger: true,
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                _deletePost();
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Future<void> _editPost() async {
     final post = _post;
     if (post == null) return;
@@ -234,9 +284,9 @@ class _PostDetailPageState extends State<PostDetailPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _deleting = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('删除失败：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '删除失败'))),
+      );
     }
   }
 
@@ -384,33 +434,15 @@ class _PostDetailPageState extends State<PostDetailPage> {
       appBar: AppBar(
         title: Text(_isActivity ? '活动详情' : '帖子详情'),
         actions: [
-          IconButton(
-            tooltip: '分享',
-            onPressed: () {
-              final post = _post;
-              if (post == null) return;
-              ShareService.shareEntity(context, post);
-            },
-            icon: const Icon(AppIcons.share),
-          ),
-          IconButton(
-            tooltip: '举报',
-            onPressed: () =>
-                _report(targetType: 'entity', targetId: widget.postId),
-            icon: const Icon(AppIcons.flag),
-          ),
-          if (_isOwn) ...[
-            IconButton(
-              tooltip: '编辑',
-              onPressed: _editPost,
-              icon: const Icon(AppIcons.edit),
+          Semantics(
+            button: true,
+            label: '更多操作',
+            child: IconButton(
+              tooltip: '更多操作',
+              onPressed: _deleting ? null : _openActions,
+              icon: const Icon(AppIcons.more),
             ),
-            IconButton(
-              tooltip: '删除',
-              onPressed: _deleting ? null : _deletePost,
-              icon: const Icon(AppIcons.trash),
-            ),
-          ],
+          ),
         ],
       ),
       body: _buildBody(),
@@ -784,6 +816,39 @@ class _CommentEntryBar extends StatelessWidget {
               Text('写评论…', style: AppText.body.copyWith(color: colors.muted)),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DetailAction extends StatelessWidget {
+  const _DetailAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.danger = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final color = danger ? colors.danger : colors.ink;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpace.lg),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: color),
+            const SizedBox(width: AppSpace.md),
+            Text(label, style: AppText.body.copyWith(color: color)),
+          ],
         ),
       ),
     );

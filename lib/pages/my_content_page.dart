@@ -15,6 +15,7 @@ import '../widgets/post_card.dart';
 import 'image_gallery_page.dart';
 import 'post_detail_page.dart';
 import 'video_player_page.dart';
+import '../utils/error_text.dart';
 
 enum MyContentKind {
   comments,
@@ -182,9 +183,9 @@ class _MyContentPageState extends State<MyContentPage> {
           _likeCounts[entity.id] = (_likeCounts[entity.id] ?? 1) - 1;
         }
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('操作失败：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '操作失败'))),
+      );
     } finally {
       _likeInFlight.remove(entity.id);
     }

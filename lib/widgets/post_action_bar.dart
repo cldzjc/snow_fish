@@ -5,6 +5,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
 import 'app/app_icons.dart';
+import '../utils/error_text.dart';
 
 /// 详情页操作栏：点赞与收藏。
 ///
@@ -75,9 +76,9 @@ class _PostActionBarState extends State<PostActionBar> {
             ? _likeCount + 1
             : (_likeCount > 0 ? _likeCount - 1 : 0);
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('点赞失败：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '点赞失败'))),
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -96,9 +97,9 @@ class _PostActionBarState extends State<PostActionBar> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _favorite = !_favorite);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('收藏失败：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '收藏失败'))),
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }

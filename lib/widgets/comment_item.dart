@@ -10,6 +10,7 @@ import '../utils/time_utils.dart';
 import 'app/app_avatar.dart';
 import 'app/app_icons.dart';
 import 'app/app_sheet.dart';
+import '../utils/error_text.dart';
 
 /// 单条评论。回复以一层缩进展示。
 class CommentItem extends StatefulWidget {
@@ -71,9 +72,9 @@ class _CommentItemState extends State<CommentItem> {
             ? _likeCount + 1
             : (_likeCount > 0 ? _likeCount - 1 : 0);
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('点赞失败：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '点赞失败'))),
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -153,9 +154,9 @@ class _CommentItemState extends State<CommentItem> {
       widget.onChanged?.call();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('编辑失败：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '编辑失败'))),
+      );
     }
   }
 
@@ -187,9 +188,9 @@ class _CommentItemState extends State<CommentItem> {
       widget.onDeleted?.call(widget.comment);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('删除失败：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '删除失败'))),
+      );
     }
   }
 

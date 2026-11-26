@@ -11,6 +11,7 @@ import '../services/entity_service.dart';
 import '../services/my_profile_store.dart';
 import '../theme/app_spacing.dart';
 import 'post_card.dart';
+import '../utils/error_text.dart';
 
 /// 统一的帖子卡片列表。
 ///
@@ -175,9 +176,9 @@ class _PostCardListState extends State<PostCardList> {
         }
         _likeCounts[post.id] = countBefore;
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('操作失败：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '操作失败'))),
+      );
     } finally {
       _likeInFlight.remove(post.id);
     }

@@ -6,6 +6,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
 import 'app/app_sheet.dart';
+import '../utils/error_text.dart';
 
 /// 打开写评论 / 回复面板。成功时返回新建的评论，取消返回 null。
 Future<CommentModel?> showCommentInputSheet(
@@ -67,9 +68,9 @@ class _CommentComposerState extends State<_CommentComposer> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('发布失败：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '发布失败'))),
+      );
     }
   }
 

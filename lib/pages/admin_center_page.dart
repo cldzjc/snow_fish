@@ -14,6 +14,7 @@ import '../widgets/app/app_icons.dart';
 import '../widgets/app/app_sheet.dart';
 import '../widgets/app/app_state_views.dart';
 import '../widgets/app/app_tabs.dart';
+import '../utils/error_text.dart';
 
 class AdminCenterPage extends StatefulWidget {
   const AdminCenterPage({super.key});
@@ -149,9 +150,9 @@ class _AdminCenterPageState extends State<AdminCenterPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('处置失败：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '处置失败'))),
+      );
     }
   }
 
@@ -190,9 +191,9 @@ class _AdminCenterPageState extends State<AdminCenterPage> {
       await _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('置顶操作失败：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '置顶操作失败'))),
+      );
     }
   }
 
@@ -214,9 +215,9 @@ class _AdminCenterPageState extends State<AdminCenterPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('操作失败：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '操作失败'))),
+      );
     }
   }
 
@@ -322,9 +323,9 @@ class _AdminCenterPageState extends State<AdminCenterPage> {
       }
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('操作失败：$error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(error, fallback: '操作失败'))),
+      );
     }
   }
 
@@ -471,9 +472,9 @@ class _AdminCenterPageState extends State<AdminCenterPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('解封失败：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '解封失败'))),
+      );
     }
   }
 
