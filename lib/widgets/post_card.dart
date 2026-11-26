@@ -326,24 +326,26 @@ class PostCard extends StatelessWidget {
                 if (onToggleLike != null)
                   _CardAction(
                     icon: liked ? AppIcons.heartFilled : AppIcons.heart,
-                    label: likeCount > 0 ? '$likeCount' : '点赞',
+                    semanticsLabel: '点赞',
+                    count: likeCount > 0 ? '$likeCount' : null,
                     active: liked,
                     onTap: onToggleLike!,
                   ),
-                if (onToggleLike != null) const SizedBox(width: AppSpace.xl),
+                if (onToggleLike != null) const SizedBox(width: AppSpace.xxl),
                 if (showCommentAction)
                   _CardAction(
                     icon: AppIcons.comment,
-                    label: post.commentCount > 0
+                    semanticsLabel: '评论',
+                    count: post.commentCount > 0
                         ? '${post.commentCount}'
-                        : '评论',
+                        : null,
                     onTap: onOpenDetail,
                   ),
                 if (showShare) ...[
-                  const SizedBox(width: AppSpace.xl),
+                  const SizedBox(width: AppSpace.xxl),
                   _CardAction(
                     icon: AppIcons.share,
-                    label: '分享',
+                    semanticsLabel: '分享',
                     onTap: () => ShareService.shareEntity(context, post),
                   ),
                 ],
@@ -377,13 +379,15 @@ class _CardTag extends StatelessWidget {
 class _CardAction extends StatelessWidget {
   const _CardAction({
     required this.icon,
-    required this.label,
+    required this.semanticsLabel,
     required this.onTap,
+    this.count,
     this.active = false,
   });
 
   final IconData icon;
-  final String label;
+  final String semanticsLabel;
+  final String? count;
   final VoidCallback? onTap;
   final bool active;
 
@@ -393,21 +397,23 @@ class _CardAction extends StatelessWidget {
     final color = active ? colors.danger : colors.muted;
     return Semantics(
       button: onTap != null,
-      label: label,
+      label: semanticsLabel,
       child: InkWell(
         borderRadius: BorderRadius.circular(AppRadius.sm),
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(
-            horizontal: AppSpace.xs,
+            horizontal: AppSpace.sm,
             vertical: AppSpace.sm,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 18, color: color),
-              const SizedBox(width: 6),
-              Text(label, style: AppText.bodySmall.copyWith(color: color)),
+              Icon(icon, size: 20, color: color),
+              if (count != null) ...[
+                const SizedBox(width: 5),
+                Text(count!, style: AppText.bodySmall.copyWith(color: color)),
+              ],
             ],
           ),
         ),
