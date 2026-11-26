@@ -230,20 +230,47 @@ class PostCard extends StatelessWidget {
                   const SizedBox(width: AppSpace.md),
               ],
             )
-          else if (_regionLabel.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(right: AppSpace.md),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: _CardTag(label: _regionLabel),
+          else if (!showAuthor && (_regionLabel.isNotEmpty || _hasMenu))
+            SizedBox(
+              height: 30,
+              child: Row(
+                children: [
+                  const Spacer(),
+                  if (_regionLabel.isNotEmpty)
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 120),
+                      child: _CardTag(label: _regionLabel),
+                    ),
+                  if (_hasMenu)
+                    Padding(
+                      padding: const EdgeInsets.only(left: AppSpace.xs),
+                      child: IconButton(
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 40,
+                          height: 30,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        tooltip: '更多操作',
+                        icon: Icon(
+                          AppIcons.more,
+                          color: colors.muted,
+                          size: 20,
+                        ),
+                        onPressed: () => _openMenu(context),
+                      ),
+                    ),
+                ],
               ),
-            ),
+            )
+          else
+            const SizedBox.shrink(),
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: onOpenDetail,
             child: Padding(
               padding: EdgeInsets.only(
-                top: showAuthor || _regionLabel.isNotEmpty ? AppSpace.md : 0,
+                top: showAuthor ? AppSpace.md : 0,
                 right: AppSpace.md,
               ),
               child: Column(

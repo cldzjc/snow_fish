@@ -163,8 +163,11 @@ class _PublishPostPageState extends State<PublishPostPage> {
     final circle =
         widget.circle ??
         CircleRepository.instance.byId(widget.initialPost?.circleId);
-    if (circle != null) return '发布到 ${circle.label}，只有同圈雪友能看到';
-    return '发布到 sk社区，所有人可见';
+    final circleText = circle == null
+        ? 'sk社区，所有人可见'
+        : '${circle.label}，只有同圈雪友能看到';
+    if (widget.initialPost != null) return '发布在 $circleText';
+    return '发布到 $circleText';
   }
 
   String get _pageTitle {

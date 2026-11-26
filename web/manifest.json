@@ -1,11 +1,11 @@
 {
-    "name": "snow_fish",
-    "short_name": "snow_fish",
+    "name": "skneo",
+    "short_name": "skneo",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#FFFFFF",
+    "theme_color": "#101010",
+    "description": "skneo sk社区：记录雪上日常，也找到下一趟的同伴。",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

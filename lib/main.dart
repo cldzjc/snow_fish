@@ -101,13 +101,15 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'skneo · 雪鱼社区',
+      title: 'skneo · sk社区',
       debugShowCheckedModeBanner: false,
       navigatorKey: _navigatorKey,
       scaffoldMessengerKey: _messengerKey,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.system,
+      // 目前只做了浅色一套视觉（品牌笔迹、开屏、卡片都按白底调的），
+      // 跟随系统会在深色设备上出现黑底黑字，先锁定浅色。
+      themeMode: ThemeMode.light,
       // 桌面/平板上把内容限制在移动端宽度，避免拉伸成另一种版式。
       builder: (context, child) {
         return ColoredBox(

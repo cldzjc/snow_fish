@@ -18,7 +18,13 @@ import 'video_player_page.dart';
 final ValueNotifier<int> feedRefreshTick = ValueNotifier<int>(0);
 
 class PostsListWidget extends StatefulWidget {
-  const PostsListWidget({super.key, this.topInset = 0, this.circleIds});
+  const PostsListWidget({
+    super.key,
+    this.topInset = 0,
+    this.circleIds,
+    this.emptyTitle,
+    this.emptyDescription,
+  });
 
   /// 列表顶部的留白（首页把顶栏做成浮层后，用它让首条内容落在顶栏下方）。
   /// 这段留白属于滚动内容，会和列表一起滚走，不会在顶部留下空白。
@@ -26,6 +32,10 @@ class PostsListWidget extends StatefulWidget {
 
   /// 非空时只展示这些圈子下的帖子；为空时是 sk社区。
   final List<String>? circleIds;
+
+  /// 空列表时的文案。
+  final String? emptyTitle;
+  final String? emptyDescription;
 
   @override
   State<PostsListWidget> createState() => PostsListWidgetState();
@@ -317,10 +327,10 @@ class PostsListWidgetState extends State<PostsListWidget>
     }
 
     if (_posts.isEmpty) {
-      return const AppStateView(
+      return AppStateView(
         icon: AppIcons.mountain,
-        title: '还没有动态',
-        description: '留一点空白，等下一段雪上的故事。',
+        title: widget.emptyTitle ?? '还没有动态',
+        description: widget.emptyDescription ?? '留一点空白，等下一段雪上的故事。',
       );
     }
 

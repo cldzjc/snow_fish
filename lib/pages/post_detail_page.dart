@@ -509,6 +509,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
                     RegionTag(
                       region: _authorProfile?['resident_region'] as String?,
                       resort: _authorProfile?['resident_resort'] as String?,
+                      plain: true,
+                      compact: true,
                     ),
                   ],
                 ),

@@ -214,6 +214,8 @@ class _PostCardListState extends State<PostCardList> {
       post: post,
       authorName: _authorName(post),
       authorAvatar: profile?['avatar_url'] as String?,
+      region: profile?['resident_region'] as String?,
+      resort: profile?['resident_resort'] as String?,
       likeCount: _likeCounts[post.id] ?? 0,
       liked: _likedIds.contains(post.id),
       showAuthor: widget.showAuthor,

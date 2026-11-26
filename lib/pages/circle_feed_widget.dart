@@ -109,7 +109,12 @@ class CircleFeedWidgetState extends State<CircleFeedWidget> {
         CircleHeaderBar(onOpenSettings: _openSettings),
         Divider(height: 1, color: context.colors.line),
         Expanded(
-          child: PostsListWidget(key: _feedKey, circleIds: scope),
+          child: PostsListWidget(
+            key: _feedKey,
+            circleIds: scope,
+            emptyTitle: '${active.name}还没有帖子',
+            emptyDescription: '来发第一条，让同圈雪友看到。',
+          ),
         ),
       ],
     );

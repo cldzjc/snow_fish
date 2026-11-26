@@ -35,7 +35,7 @@ class MyContentPage extends StatefulWidget {
     MyContentKind.favorites => '我的收藏',
     MyContentKind.activities => '我的活动',
     MyContentKind.community => '社区服务',
-    MyContentKind.about => '关于 Snow Fish',
+    MyContentKind.about => '关于 skneo',
     MyContentKind.settings => '设置',
   };
 
@@ -248,16 +248,23 @@ class _MyContentPageState extends State<MyContentPage> {
   @override
   Widget build(BuildContext context) {
     if (widget.kind == MyContentKind.community) {
-      return _staticScaffold('社区服务', '举报、申诉与社区规则说明会放在这里，目前还在整理。');
+      // 没有实质内容就明说，别写成「还在整理」，用户会以为项目没做完。
+      return _staticScaffold(
+        '社区服务',
+        '举报与申诉入口：在任意帖子或评论右上角选择「举报」即可。\n管理员处理后会通过通知告知结果。',
+      );
     }
     if (widget.kind == MyContentKind.about) {
       return _staticScaffold(
-        '关于 Snow Fish',
-        'Snow Fish（skneo）是给滑雪人的日常社区：\n记录雪上日常，也找到下一趟的同伴。',
+        '关于 skneo',
+        'skneo · sk社区 是给滑雪人的日常社区：\n记录雪上日常，也找到下一趟的同伴。',
       );
     }
     if (widget.kind == MyContentKind.settings) {
-      return _staticScaffold('设置', '账号与通知设置尚未开放。如需修改资料，请在「我的」页进入「编辑资料」。');
+      return _staticScaffold(
+        '设置',
+        '目前还没有需要在这里调整的选项。\n修改昵称、头像、常驻地点，请在「我的」页点「编辑资料」。',
+      );
     }
 
     return Scaffold(

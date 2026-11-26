@@ -360,7 +360,7 @@ class _ProfilePageState extends State<ProfilePage> {
       _Entry('我的收藏', () => _open(MyContentKind.favorites)),
       _Entry('我的活动', () => _open(MyContentKind.activities)),
       _Entry('社区服务', () => _open(MyContentKind.community)),
-      _Entry('关于 Snow Fish', () => _open(MyContentKind.about)),
+      _Entry('关于 skneo', () => _open(MyContentKind.about)),
       _Entry('设置', () => _open(MyContentKind.settings)),
       if (_profile?.role == 'admin')
         _Entry(
