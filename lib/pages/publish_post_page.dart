@@ -146,10 +146,6 @@ class _PublishPostPageState extends State<PublishPostPage> {
 
   bool get _isLoggedIn => Supabase.instance.client.auth.currentSession != null;
 
-  /// 约滑、约拍必须选到具体雪场；约饭、约装备到区县即可。
-  bool get _requiresResort =>
-      _entityType == 'activity_ski' || _entityType == 'activity_photo';
-
   /// 发帖归属：活动只能进 sk社区，普通帖按进入发布页时所在的板块决定。
   String? get _targetCircleId {
     if (_isActivity) return null;
@@ -194,37 +190,19 @@ class _PublishPostPageState extends State<PublishPostPage> {
         '${two(local.hour)}:${two(local.minute)}';
   }
 
-  Future<void> _pickRegion() async {
-    final selection = await showGeoPicker(
-      context,
-      title: '活动地区',
-      initialRegion: _region,
-      initialResort: _resort,
-    );
-    if (selection == null) return;
-    setState(() {
-      _region = selection.region;
-      // 换地区后原来的雪场可能不属于新的区县，清掉重选。
-      if (_resort.isNotEmpty &&
-          !resortOptionsFor(selection.region).contains(_resort)) {
-        _resort = '';
-      }
-    });
-  }
-
   Future<void> _pickResort() async {
-    if (_region.trim().isEmpty) {
-      _toast('请先选择活动地区');
-      return;
-    }
     final picked = await showResortSheet(
       context,
-      options: resortOptionsFor(_region),
+      // 一次列出全部雪场，输入关键字就地筛选。
+      options: resortOptionsFor(''),
       selected: _resort,
-      allowNone: !_requiresResort,
     );
-    if (picked == null) return;
-    setState(() => _resort = picked);
+    if (picked == null || picked.isEmpty) return;
+    setState(() {
+      _resort = picked;
+      // 区县由雪场反查，展示与筛选都用这份数据。
+      _region = GeoRepository.instance.districtPathOfResort(picked) ?? _region;
+    });
   }
 
   Future<void> _pickStartAt() async {
@@ -268,18 +246,19 @@ class _PublishPostPageState extends State<PublishPostPage> {
 
     Map<String, dynamic>? extraData;
     if (_isActivity) {
-      if (_region.trim().isEmpty) {
-        _toast('请选择活动地区');
+      if (_resort.trim().isEmpty) {
+        _toast('请选择活动雪场');
         return;
       }
-      if (_requiresResort && _resort.trim().isEmpty) {
-        _toast('约滑和约拍需要选到具体雪场');
+      final region = GeoRepository.instance.districtPathOfResort(_resort);
+      if (region == null || region.isEmpty) {
+        _toast('没有找到这个雪场所属的区县');
         return;
       }
       final max = _maxController.text.trim();
-      final maxValue = max.isEmpty ? null : int.tryParse(max);
-      if (max.isNotEmpty && (maxValue == null || maxValue < 1)) {
-        _toast('参与人数需要是大于 0 的整数');
+      final maxValue = int.tryParse(max);
+      if (maxValue == null || maxValue < 1) {
+        _toast('请填写最多参与人数');
         return;
       }
       if (_startAt == null) {
@@ -307,19 +286,11 @@ class _PublishPostPageState extends State<PublishPostPage> {
         widget.initialPost?.extraData ?? const <String, dynamic>{},
       );
       base['activity_type'] = _entityType.replaceFirst('activity_', '');
-      base['region_id'] = _region.trim();
-      if (_resort.trim().isEmpty) {
-        base.remove('resort_id');
-      } else {
-        base['resort_id'] = _resort.trim();
-      }
+      base['region_id'] = region;
+      base['resort_id'] = _resort.trim();
       base['start_at'] = _startAt!.toUtc().toIso8601String();
       base.remove('join_deadline');
-      if (maxValue == null) {
-        base.remove('max_participants');
-      } else {
-        base['max_participants'] = maxValue;
-      }
+      base['max_participants'] = maxValue;
       base['activity_status'] =
           base['activity_status']?.toString() ?? 'recruiting';
       extraData = base;
@@ -449,14 +420,16 @@ class _PublishPostPageState extends State<PublishPostPage> {
             borderless: true,
           ),
           const SizedBox(height: AppSpace.md),
-          _buildMediaEntry(),
-          if (_picked.isNotEmpty) ...[
-            const SizedBox(height: AppSpace.md),
-            _buildPickedStrip(),
-          ],
-          if (_existingMedia.isNotEmpty) ...[
-            const SizedBox(height: AppSpace.md),
-            _buildExistingMedia(),
+          if (!_isActivity) ...[
+            _buildMediaEntry(),
+            if (_picked.isNotEmpty) ...[
+              const SizedBox(height: AppSpace.md),
+              _buildPickedStrip(),
+            ],
+            if (_existingMedia.isNotEmpty) ...[
+              const SizedBox(height: AppSpace.md),
+              _buildExistingMedia(),
+            ],
           ],
           if (_isActivity) ...[
             const SizedBox(height: AppSpace.xxl),
@@ -465,23 +438,12 @@ class _PublishPostPageState extends State<PublishPostPage> {
             Text('活动信息', style: AppText.title.copyWith(color: colors.ink)),
             const SizedBox(height: AppSpace.lg),
             AppField(
-              label: '活动地区',
+              label: '活动雪场',
               requiredMark: true,
-              note: '选到区县',
-              child: _PickerTile(
-                value: _region,
-                hint: '请选择省市/区县',
-                onTap: _pickRegion,
-              ),
-            ),
-            const SizedBox(height: AppSpace.lg),
-            AppField(
-              label: '雪场',
-              requiredMark: _requiresResort,
-              note: _requiresResort ? '必选' : '可选',
+              note: '输入关键字自动筛选',
               child: _PickerTile(
                 value: _resort,
-                hint: _requiresResort ? '搜索并选择雪场' : '不指定也可以',
+                hint: '搜索并选择雪场',
                 onTap: _pickResort,
               ),
             ),
@@ -490,7 +452,9 @@ class _PublishPostPageState extends State<PublishPostPage> {
               label: '开始时间',
               requiredMark: true,
               child: _PickerTile(
-                value: _startAt == null ? '' : _prettyTime(_startAt!.toIso8601String()),
+                value: _startAt == null
+                    ? ''
+                    : _prettyTime(_startAt!.toIso8601String()),
                 hint: '选择开始时间',
                 onTap: _pickStartAt,
               ),
@@ -498,7 +462,7 @@ class _PublishPostPageState extends State<PublishPostPage> {
             const SizedBox(height: AppSpace.lg),
             AppField(
               label: '最多参与人数',
-              note: '不填则无上限',
+              requiredMark: true,
               child: AppTextField(
                 controller: _maxController,
                 hint: '例如 3',

@@ -58,27 +58,28 @@
 
       window.skneoTurnstileRender = (tokenCallback) => {
         callback = tokenCallback;
-        const render = () => {
-          if (widgetId !== undefined) return;
-          if (!window.turnstile) {
-            window.setTimeout(render, 100);
-            return;
-          }
-          widgetId = window.turnstile.render('#skneo-turnstile-container', {
-            sitekey: siteKey,
-            appearance: 'interaction-only',
-            execution: 'execute',
-            callback: (token) => callback?.(token),
-            'expired-callback': () => callback?.(''),
-            'error-callback': () => callback?.('')
-          });
-          if (executeWhenReady) {
-            executeWhenReady = false;
-            window.turnstile.execute(widgetId);
-          }
-        };
         render();
       };
+
+      function render() {
+        if (widgetId !== undefined) return;
+        if (!window.turnstile) {
+          window.setTimeout(render, 100);
+          return;
+        }
+        widgetId = window.turnstile.render('#skneo-turnstile-container', {
+          sitekey: siteKey,
+          appearance: 'interaction-only',
+          execution: 'execute',
+          callback: (token) => callback?.(token),
+          'expired-callback': () => callback?.(''),
+          'error-callback': () => callback?.('')
+        });
+        if (executeWhenReady) {
+          executeWhenReady = false;
+          window.turnstile.execute(widgetId);
+        }
+      }
       window.skneoTurnstileExecute = () => {
         if (widgetId !== undefined && window.turnstile) {
           window.turnstile.execute(widgetId);
@@ -92,6 +93,27 @@
           window.turnstile.reset(widgetId);
         }
         callback = undefined;
+      };
+
+      // 预热：页面不可见时不要跑挑战，否则 Turnstile 会反复崩溃重试。
+      window.skneoTurnstileWarmUp = (tokenCallback) => {
+        const run = () => {
+          callback = tokenCallback;
+          render();
+          if (widgetId !== undefined && window.turnstile) {
+            window.turnstile.execute(widgetId);
+          }
+        };
+        if (document.visibilityState === 'visible') {
+          run();
+          return;
+        }
+        const onVisible = () => {
+          if (document.visibilityState !== 'visible') return;
+          document.removeEventListener('visibilitychange', onVisible);
+          run();
+        };
+        document.addEventListener('visibilitychange', onVisible);
       };
     })();
   </script>

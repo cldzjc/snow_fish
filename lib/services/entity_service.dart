@@ -153,6 +153,7 @@ class EntityService {
   /// 避免「点进去发现报名不了」。
   Future<List<BaseEntity>> fetchActivities({
     String? regionId,
+    String? resortId,
     String? activityType,
   }) async {
     var query = _client
@@ -163,6 +164,9 @@ class EntityService {
     if (regionId != null && regionId.isNotEmpty) {
       // 老活动只记到省份，新活动记到区县，用前缀匹配两种都能命中。
       query = query.like('extra_data->>region_id', '$regionId%');
+    }
+    if (resortId != null && resortId.isNotEmpty) {
+      query = query.filter('extra_data->>resort_id', 'eq', resortId);
     }
     if (activityType != null && activityType.isNotEmpty) {
       query = query.filter('extra_data->>activity_type', 'eq', activityType);

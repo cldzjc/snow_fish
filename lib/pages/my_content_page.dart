@@ -316,6 +316,21 @@ class _MyContentPageState extends State<MyContentPage> {
             ),
           ),
           Divider(color: colors.line, height: 1),
+          if (_phone != null)
+            InkWell(
+              onTap: _clearPhone,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpace.xl,
+                  vertical: AppSpace.lg,
+                ),
+                child: Text(
+                  '清除手机号',
+                  style: AppText.body.copyWith(color: colors.danger),
+                ),
+              ),
+            ),
+          if (_phone != null) Divider(color: colors.line, height: 1),
           Padding(
             padding: const EdgeInsets.fromLTRB(
               AppSpace.xl,
@@ -350,6 +365,30 @@ class _MyContentPageState extends State<MyContentPage> {
     );
     if (saved == null || !mounted) return;
     setState(() => _phone = saved);
+  }
+
+  Future<void> _clearPhone() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('清除手机号？'),
+        content: const Text('清除后，发起活动时会要求你重新填写。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('清除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await ContactService().clearMine();
+    if (!mounted) return;
+    setState(() => _phone = null);
   }
 
   Widget _staticScaffold(String title, String text) {

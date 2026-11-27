@@ -132,6 +132,41 @@ class GeoRepository {
     return provinceNames.contains(head) ? head : '';
   }
 
+  /// 雪场名 → 所在区县路径（`河北·张家口·崇礼`）。
+  String? districtPathOfResort(String? resort) {
+    final name = resort?.trim() ?? '';
+    if (name.isEmpty || name == noFixedResort) return null;
+    for (final province in provinces) {
+      for (final city in province.cities) {
+        for (final district in city.districts) {
+          if (district.resorts.contains(name)) {
+            return joinPath(province.name, city.name, district.name);
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  /// 扁平化的区县列表（带上级路径），供约约约两级筛选使用。
+  List<GeoDistrictPath> get districtPaths {
+    final result = <GeoDistrictPath>[];
+    for (final province in provinces) {
+      for (final city in province.cities) {
+        for (final district in city.districts) {
+          result.add(
+            GeoDistrictPath(
+              path: joinPath(province.name, city.name, district.name),
+              district: district.name,
+              resorts: district.resorts,
+            ),
+          );
+        }
+      }
+    }
+    return result;
+  }
+
   /// 把三级行政区拼成存储路径。
   static String joinPath(String province, String city, String district) {
     return <String>[
@@ -180,6 +215,23 @@ class GeoDistrict {
   const GeoDistrict({required this.name, required this.resorts});
 
   final String name;
+  final List<String> resorts;
+}
+
+/// 带上级路径的区县，用于「地点」两级筛选。
+class GeoDistrictPath {
+  const GeoDistrictPath({
+    required this.path,
+    required this.district,
+    required this.resorts,
+  });
+
+  /// `河北·张家口·崇礼`
+  final String path;
+
+  /// `崇礼`
+  final String district;
+
   final List<String> resorts;
 }
 

@@ -9,6 +9,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
 import '../utils/geo_format.dart';
+import '../widgets/app/activity_form_sheets.dart';
 import '../widgets/app/app_field.dart';
 import '../widgets/app/app_icons.dart';
 import '../widgets/app/app_state_views.dart';
@@ -30,23 +31,16 @@ class ActivityListWidget extends StatefulWidget {
 
 class ActivityListWidgetState extends State<ActivityListWidget>
     with AutomaticKeepAliveClientMixin {
-  static List<AppOption<String>> get _regionOptions => <AppOption<String>>[
-    const AppOption<String>('', '全部地区'),
-    for (final region in GeoRepository.instance.provinceNames)
-      AppOption<String>(region, region),
-  ];
-
   static const List<AppOption<String>> _typeOptions = <AppOption<String>>[
     AppOption<String>('', '全部类型'),
     AppOption<String>('ski', '约滑'),
     AppOption<String>('photo', '约拍'),
     AppOption<String>('food', '约饭'),
-    AppOption<String>('gear', '约装备'),
   ];
 
   final EntityService _entityService = EntityService();
 
-  String _region = '';
+  ActivityPlaceFilter _place = const ActivityPlaceFilter();
   String _type = '';
   bool _loading = true;
   String? _error;
@@ -89,7 +83,8 @@ class ActivityListWidgetState extends State<ActivityListWidget>
     });
     try {
       final items = await _entityService.fetchActivities(
-        regionId: _region.isEmpty ? null : _region,
+        regionId: _place.region.isEmpty ? null : _place.region,
+        resortId: _place.resort.isEmpty ? null : _place.resort,
         activityType: _type.isEmpty ? null : _type,
       );
       if (!mounted) return;
@@ -110,75 +105,99 @@ class ActivityListWidgetState extends State<ActivityListWidget>
     }
   }
 
+  Future<void> _pickPlace() async {
+    final picked = await showActivityPlaceSheet(context, current: _place);
+    if (picked == null || !mounted) return;
+    setState(() => _place = picked);
+    _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpace.lg,
-            AppSpace.md,
-            AppSpace.lg,
-            AppSpace.md,
+    return _buildBody();
+  }
+
+  /// 筛选行跟着列表一起滚走，避免顶栏沉浸式收起后留下空白。
+  Widget _filters() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpace.lg,
+        AppSpace.md,
+        AppSpace.lg,
+        AppSpace.md,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: AppDropdown<String>(
+              options: _typeOptions,
+              value: _type,
+              onChanged: (value) {
+                setState(() => _type = value ?? '');
+                _load();
+              },
+            ),
           ),
-          child: Row(
-            children: [
-              Expanded(
-                child: AppDropdown<String>(
-                  options: _regionOptions,
-                  value: _region,
-                  onChanged: (value) {
-                    setState(() => _region = value ?? '');
-                    _load();
-                  },
-                ),
-              ),
-              const SizedBox(width: AppSpace.md),
-              Expanded(
-                child: AppDropdown<String>(
-                  options: _typeOptions,
-                  value: _type,
-                  onChanged: (value) {
-                    setState(() => _type = value ?? '');
-                    _load();
-                  },
-                ),
-              ),
-            ],
+          const SizedBox(width: AppSpace.md),
+          Expanded(
+            child: _PlaceFilterButton(
+              label: _place.label,
+              active: !_place.isEmpty,
+              onTap: _pickPlace,
+            ),
           ),
-        ),
-        Expanded(child: _buildBody()),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _buildBody() {
-    if (_loading) return const AppLoadingSkeleton(rows: 2);
+    if (_loading) {
+      return Padding(
+        padding: EdgeInsets.only(top: widget.topInset),
+        child: const AppLoadingSkeleton(rows: 2),
+      );
+    }
     if (_error != null) {
-      return AppStateView.error(onRetry: _load);
+      return Padding(
+        padding: EdgeInsets.only(top: widget.topInset),
+        child: AppStateView.error(onRetry: _load),
+      );
     }
     if (_items.isEmpty) {
-      return const AppStateView(
-        icon: AppIcons.mountain,
-        title: '还没有活动',
-        description: '还没有人发起，你可以做第一个。',
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.only(top: widget.topInset),
+        children: [
+          _filters(),
+          const SizedBox(height: AppSpace.xxxl),
+          const AppStateView(
+            icon: AppIcons.mountain,
+            title: '还没有活动',
+            description: '还没有人发起，你可以做第一个。',
+          ),
+        ],
       );
     }
     return ListView.separated(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.only(top: widget.topInset, bottom: 92),
-      itemCount: _items.length,
+      itemCount: _items.length + 1,
       separatorBuilder: (_, __) => const SizedBox.shrink(),
-      itemBuilder: (_, index) => _ActivityRow(
-        activity: _items[index],
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => PostDetailPage(postId: _items[index].id),
+      itemBuilder: (_, index) {
+        if (index == 0) return _filters();
+        final activity = _items[index - 1];
+        return _ActivityRow(
+          activity: activity,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PostDetailPage(postId: activity.id),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -240,6 +259,51 @@ class _ActivityRow extends StatelessWidget {
               ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 地点筛选按钮：外观和下拉框一致，点击打开两级面板。
+class _PlaceFilterButton extends StatelessWidget {
+  const _PlaceFilterButton({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      onTap: onTap,
+      child: Container(
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: AppSpace.md),
+        decoration: BoxDecoration(
+          color: colors.soft,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.bodySmall.copyWith(
+                  color: active ? colors.ink : colors.muted,
+                ),
+              ),
+            ),
+            Icon(AppIcons.chevron, size: 16, color: colors.muted),
+          ],
         ),
       ),
     );

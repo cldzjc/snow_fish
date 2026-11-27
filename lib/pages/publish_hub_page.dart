@@ -50,12 +50,6 @@ class _ActivityTypePicker extends StatelessWidget {
       description: '收板之后，吃顿热的',
       icon: AppIcons.food,
     ),
-    _ActivityKind(
-      entityType: 'activity_gear',
-      label: '约装备',
-      description: '聊聊这个雪季的装备',
-      icon: AppIcons.gear,
-    ),
   ];
 
   @override

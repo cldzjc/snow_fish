@@ -33,6 +33,13 @@ class _LoginPageState extends State<LoginPage> {
   int _secondsRemaining = 0;
 
   @override
+  void initState() {
+    super.initState();
+    // 先把人机验证跑掉，点「发送验证码」时就不用干等。
+    unawaited(_turnstileService.warmUp());
+  }
+
+  @override
   void dispose() {
     _countdownTimer?.cancel();
     _emailController.dispose();

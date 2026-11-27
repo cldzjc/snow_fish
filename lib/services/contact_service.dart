@@ -56,4 +56,14 @@ class ContactService {
     if (value.length < 7) return value;
     return '${value.substring(0, 3)}****${value.substring(value.length - 4)}';
   }
+
+  /// 清除已保存的手机号。
+  Future<void> clearMine() async {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) return;
+    await _client.from('user_contacts').delete().eq('user_id', uid);
+    myPhone.value = null;
+    _loaded = true;
+    _loadedFor = uid;
+  }
 }

@@ -138,7 +138,7 @@ class _MyPostsPageState extends State<MyPostsPage> {
       onRefresh: _load,
       child: PostCardList(
         posts: _items,
-        showAuthor: false,
+        showAuthor: true,
         padding: EdgeInsets.zero,
         onOpenDetail: _openDetail,
         onEdit: _edit,

@@ -7,6 +7,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import '../../utils/error_text.dart';
+import '../../utils/geo_format.dart';
 import 'app_button.dart';
 import 'app_field.dart';
 import 'app_icons.dart';
@@ -389,41 +390,142 @@ class _DateTimeSheet extends StatefulWidget {
 
 class _DateTimeSheetState extends State<_DateTimeSheet> {
   late final DateTime _now = DateTime.now();
-  late DateTime _value;
+  late final List<DateTime> _days = _buildDays();
+  late int _dayIndex;
+  late int _hour;
+  late int _minute;
+
+  static const List<int> _minuteSteps = <int>[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+
+  List<DateTime> _buildDays() {
+    final today = DateTime(_now.year, _now.month, _now.day);
+    // 半年可选上限。
+    return List<DateTime>.generate(
+      183,
+      (index) => today.add(Duration(days: index)),
+    );
+  }
 
   @override
   void initState() {
     super.initState();
     final seed = widget.initial ?? _now.add(const Duration(hours: 2));
-    final rounded = DateTime(
-      seed.year,
-      seed.month,
-      seed.day,
-      seed.hour,
-      (seed.minute ~/ 5) * 5,
+    final safe = seed.isBefore(_now) ? _now.add(const Duration(hours: 1)) : seed;
+    final day = DateTime(safe.year, safe.month, safe.day);
+    final index = _days.indexWhere(
+      (item) =>
+          item.year == day.year && item.month == day.month && item.day == day.day,
     );
-    _value = rounded.isBefore(_now) ? _now.add(const Duration(hours: 1)) : rounded;
+    _dayIndex = index < 0 ? 0 : index;
+    _hour = safe.hour;
+    _minute = ((safe.minute ~/ 5) * 5).clamp(0, 55);
   }
+
+  DateTime get _value => DateTime(
+    _days[_dayIndex].year,
+    _days[_dayIndex].month,
+    _days[_dayIndex].day,
+    _hour,
+    _minute,
+  );
+
+  bool get _isToday {
+    final day = _days[_dayIndex];
+    return day.year == _now.year &&
+        day.month == _now.month &&
+        day.day == _now.day;
+  }
+
+  /// 今天时只给出现在之后的小时，避免选出过去时间。
+  List<int> get _hours =>
+      _isToday
+      ? List<int>.generate(24 - _now.hour, (index) => _now.hour + index)
+      : List<int>.generate(24, (index) => index);
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final hours = _hours;
+    if (!hours.contains(_hour)) _hour = hours.first;
     return SheetShell(
       title: widget.title,
-      subtitle: '只能选到一年以内，默认从现在往后。',
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
             height: 216,
-            child: CupertinoDatePicker(
-              mode: CupertinoDatePickerMode.dateAndTime,
-              use24hFormat: true,
-              minuteInterval: 5,
-              minimumDate: _now.subtract(const Duration(minutes: 1)),
-              maximumDate: DateTime(_now.year + 1, _now.month, _now.day),
-              initialDateTime: _value,
-              onDateTimeChanged: (value) => _value = value,
+            child: Row(
+              children: [
+                // 年份只做展示，跟着日期滚轮走。
+                SizedBox(
+                  width: 68,
+                  child: Center(
+                    child: Text(
+                      '${_days[_dayIndex].year}',
+                      style: AppText.title.copyWith(color: colors.ink),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: CupertinoPicker(
+                    itemExtent: 36,
+                    scrollController: FixedExtentScrollController(
+                      initialItem: _dayIndex,
+                    ),
+                    onSelectedItemChanged: (index) =>
+                        setState(() => _dayIndex = index),
+                    children: [
+                      for (final day in _days)
+                        Center(
+                          child: Text(
+                            '${day.month}月${day.day}日',
+                            style: AppText.title.copyWith(color: colors.ink),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  width: 62,
+                  child: CupertinoPicker(
+                    itemExtent: 36,
+                    scrollController: FixedExtentScrollController(
+                      initialItem: hours.indexOf(_hour).clamp(0, hours.length - 1),
+                    ),
+                    onSelectedItemChanged: (index) =>
+                        setState(() => _hour = hours[index]),
+                    children: [
+                      for (final hour in hours)
+                        Center(
+                          child: Text(
+                            hour.toString().padLeft(2, '0'),
+                            style: AppText.title.copyWith(color: colors.ink),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  width: 62,
+                  child: CupertinoPicker(
+                    itemExtent: 36,
+                    scrollController: FixedExtentScrollController(
+                      initialItem: _minuteSteps.indexOf(_minute).clamp(0, 11),
+                    ),
+                    onSelectedItemChanged: (index) =>
+                        setState(() => _minute = _minuteSteps[index]),
+                    children: [
+                      for (final minute in _minuteSteps)
+                        Center(
+                          child: Text(
+                            minute.toString().padLeft(2, '0'),
+                            style: AppText.title.copyWith(color: colors.ink),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
           Padding(
@@ -436,12 +538,195 @@ class _DateTimeSheetState extends State<_DateTimeSheet> {
             child: AppButton(
               label: '完成',
               expand: true,
-              onPressed: () => Navigator.of(context).pop(_value),
+              onPressed: () {
+                final value = _value;
+                final now = DateTime.now();
+                if (!value.isAfter(now)) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('请选择晚于现在的时间')),
+                  );
+                  return;
+                }
+                Navigator.of(context).pop(value);
+              },
             ),
           ),
-          const SizedBox(height: AppSpace.xs),
           Divider(color: colors.line, height: 1),
         ],
+      ),
+    );
+  }
+}
+
+/// 约约约的「地点」筛选值：区县路径 + 雪场。
+class ActivityPlaceFilter {
+  const ActivityPlaceFilter({this.region = '', this.resort = ''});
+
+  /// `河北·张家口·崇礼`，空表示不限。
+  final String region;
+
+  /// 雪场名，空表示该区县下全部雪场。
+  final String resort;
+
+  bool get isEmpty => region.isEmpty && resort.isEmpty;
+
+  String get label {
+    if (resort.isNotEmpty) return resort;
+    if (region.isEmpty) return '全部地点';
+    return regionLeaf(region);
+  }
+}
+
+/// 两级地点筛选面板：左选区县，右选该区县下的雪场。
+Future<ActivityPlaceFilter?> showActivityPlaceSheet(
+  BuildContext context, {
+  required ActivityPlaceFilter current,
+}) {
+  return showModalBottomSheet<ActivityPlaceFilter>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _PlaceFilterSheet(current: current),
+  );
+}
+
+class _PlaceFilterSheet extends StatefulWidget {
+  const _PlaceFilterSheet({required this.current});
+
+  final ActivityPlaceFilter current;
+
+  @override
+  State<_PlaceFilterSheet> createState() => _PlaceFilterSheetState();
+}
+
+class _PlaceFilterSheetState extends State<_PlaceFilterSheet> {
+  late String _region = widget.current.region;
+  late String _resort = widget.current.resort;
+
+  List<GeoDistrictPath> get _districts => GeoRepository.instance.districtPaths;
+
+  List<String> get _resorts {
+    if (_region.isEmpty) return const <String>[];
+    for (final item in _districts) {
+      if (item.path == _region) return item.resorts;
+    }
+    return const <String>[];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SheetShell(
+      title: '按地点筛选',
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.55,
+        child: Row(
+          children: [
+            SizedBox(
+              width: 132,
+              child: ListView(
+                children: [
+                  _PlaceTile(
+                    label: '全部区县',
+                    active: _region.isEmpty,
+                    onTap: () => setState(() {
+                      _region = '';
+                      _resort = '';
+                    }),
+                  ),
+                  for (final item in _districts)
+                    _PlaceTile(
+                      label: item.district,
+                      active: item.path == _region,
+                      onTap: () => setState(() {
+                        _region = item.path;
+                        _resort = '';
+                      }),
+                    ),
+                ],
+              ),
+            ),
+            VerticalDivider(color: colors.line, width: 1),
+            Expanded(
+              child: _region.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(AppSpace.xl),
+                        child: Text(
+                          '先选一个区县，再挑雪场',
+                          textAlign: TextAlign.center,
+                          style: AppText.bodySmall.copyWith(
+                            color: colors.muted,
+                          ),
+                        ),
+                      ),
+                    )
+                  : _resorts.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(AppSpace.xl),
+                        child: Text(
+                          '这个区县还没有收录雪场',
+                          textAlign: TextAlign.center,
+                          style: AppText.bodySmall.copyWith(
+                            color: colors.muted,
+                          ),
+                        ),
+                      ),
+                    )
+                  : ListView(
+                      children: [
+                        _PlaceTile(
+                          label: '全部雪场',
+                          active: _resort.isEmpty,
+                          onTap: () => setState(() => _resort = ''),
+                        ),
+                        for (final item in _resorts)
+                          _PlaceTile(
+                            label: item,
+                            active: item == _resort,
+                            onTap: () => setState(() => _resort = item),
+                          ),
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PlaceTile extends StatelessWidget {
+  const _PlaceTile({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpace.lg,
+          vertical: AppSpace.md,
+        ),
+        color: active ? colors.soft : Colors.transparent,
+        child: Text(
+          label,
+          style: AppText.body.copyWith(
+            color: active ? colors.ink : colors.muted,
+            fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+          ),
+        ),
       ),
     );
   }
