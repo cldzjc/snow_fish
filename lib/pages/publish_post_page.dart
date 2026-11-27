@@ -7,6 +7,7 @@ import '../media_service.dart';
 import '../models/base_entity.dart';
 import '../models/circle.dart';
 import '../models/media_model.dart';
+import '../services/contact_service.dart';
 import '../services/entity_service.dart';
 import '../services/circle_repository.dart';
 import '../services/my_profile_store.dart';
@@ -14,10 +15,12 @@ import '../services/publish_draft_store.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
+import '../widgets/app/activity_form_sheets.dart';
 import '../widgets/app/app_avatar.dart';
 import '../widgets/app/app_button.dart';
 import '../widgets/app/app_field.dart';
 import '../widgets/app/app_icons.dart';
+import '../widgets/app/geo_picker_sheet.dart';
 import 'login_page.dart';
 
 class PublishPostPage extends StatefulWidget {
@@ -44,9 +47,6 @@ class _PublishPostPageState extends State<PublishPostPage> {
 
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _contentController = TextEditingController();
-  final TextEditingController _resortController = TextEditingController();
-  final TextEditingController _startAtController = TextEditingController();
-  final TextEditingController _deadlineController = TextEditingController();
   final TextEditingController _maxController = TextEditingController();
 
   late final String _entityType;
@@ -55,6 +55,8 @@ class _PublishPostPageState extends State<PublishPostPage> {
   late List<MediaModel> _existingMedia;
 
   String _region = '';
+  String _resort = '';
+  DateTime? _startAt;
   List<PlatformFile> _picked = <PlatformFile>[];
   bool _loading = false;
   bool _submitted = false;
@@ -74,21 +76,19 @@ class _PublishPostPageState extends State<PublishPostPage> {
       _contentController.text = post.content ?? '';
       final extra = post.extraData;
       _region = extra['region_id']?.toString() ?? '';
-      _resortController.text = extra['resort_id']?.toString() ?? '';
-      _startAtController.text = _prettyTime(extra['start_at']?.toString());
-      _deadlineController.text = _prettyTime(
-        extra['join_deadline']?.toString(),
-      );
+      _resort = extra['resort_id']?.toString() ?? '';
+      _startAt = DateTime.tryParse(
+        extra['start_at']?.toString() ?? '',
+      )?.toLocal();
       _maxController.text = extra['max_participants']?.toString() ?? '';
     } else {
       final draft = PublishDraftStore.read(_draftKey);
       if (draft != null) {
         _titleController.text = draft['title'] ?? '';
         _contentController.text = draft['content'] ?? '';
-        _region = draft['region_id'] ?? '';
-        _resortController.text = draft['resort_id'] ?? '';
-        _startAtController.text = draft['start_at'] ?? '';
-        _deadlineController.text = draft['join_deadline'] ?? '';
+        _region = draft['region_id'] ?? _region;
+        _resort = draft['resort_id'] ?? '';
+        _startAt = DateTime.tryParse(draft['start_at'] ?? '');
         _maxController.text = draft['max_participants'] ?? '';
       }
     }
@@ -128,9 +128,6 @@ class _PublishPostPageState extends State<PublishPostPage> {
     _saveDraft();
     _titleController.dispose();
     _contentController.dispose();
-    _resortController.dispose();
-    _startAtController.dispose();
-    _deadlineController.dispose();
     _maxController.dispose();
     super.dispose();
   }
@@ -141,14 +138,17 @@ class _PublishPostPageState extends State<PublishPostPage> {
       'title': _titleController.text,
       'content': _contentController.text,
       'region_id': _region,
-      'resort_id': _resortController.text,
-      'start_at': _startAtController.text,
-      'join_deadline': _deadlineController.text,
+      'resort_id': _resort,
+      'start_at': _startAt?.toIso8601String() ?? '',
       'max_participants': _maxController.text,
     });
   }
 
   bool get _isLoggedIn => Supabase.instance.client.auth.currentSession != null;
+
+  /// 约滑、约拍必须选到具体雪场；约饭、约装备到区县即可。
+  bool get _requiresResort =>
+      _entityType == 'activity_ski' || _entityType == 'activity_photo';
 
   /// 发帖归属：活动只能进 sk社区，普通帖按进入发布页时所在的板块决定。
   String? get _targetCircleId {
@@ -194,6 +194,45 @@ class _PublishPostPageState extends State<PublishPostPage> {
         '${two(local.hour)}:${two(local.minute)}';
   }
 
+  Future<void> _pickRegion() async {
+    final selection = await showGeoPicker(
+      context,
+      title: '活动地区',
+      initialRegion: _region,
+      initialResort: _resort,
+    );
+    if (selection == null) return;
+    setState(() {
+      _region = selection.region;
+      // 换地区后原来的雪场可能不属于新的区县，清掉重选。
+      if (_resort.isNotEmpty &&
+          !resortOptionsFor(selection.region).contains(_resort)) {
+        _resort = '';
+      }
+    });
+  }
+
+  Future<void> _pickResort() async {
+    if (_region.trim().isEmpty) {
+      _toast('请先选择活动地区');
+      return;
+    }
+    final picked = await showResortSheet(
+      context,
+      options: resortOptionsFor(_region),
+      selected: _resort,
+      allowNone: !_requiresResort,
+    );
+    if (picked == null) return;
+    setState(() => _resort = picked);
+  }
+
+  Future<void> _pickStartAt() async {
+    final picked = await showDateTimeSheet(context, initial: _startAt);
+    if (picked == null) return;
+    setState(() => _startAt = picked);
+  }
+
   void _toast(String message) {
     ScaffoldMessenger.of(
       context,
@@ -233,37 +272,35 @@ class _PublishPostPageState extends State<PublishPostPage> {
         _toast('请选择活动地区');
         return;
       }
+      if (_requiresResort && _resort.trim().isEmpty) {
+        _toast('约滑和约拍需要选到具体雪场');
+        return;
+      }
       final max = _maxController.text.trim();
       final maxValue = max.isEmpty ? null : int.tryParse(max);
       if (max.isNotEmpty && (maxValue == null || maxValue < 1)) {
         _toast('参与人数需要是大于 0 的整数');
         return;
       }
-      final startRaw = _startAtController.text.trim();
-      final deadlineRaw = _deadlineController.text.trim();
-      final startAt = startRaw.isEmpty ? null : DateTime.tryParse(startRaw);
-      final deadline = deadlineRaw.isEmpty
-          ? null
-          : DateTime.tryParse(deadlineRaw);
-      if (startRaw.isNotEmpty && startAt == null) {
-        _toast('开始时间格式不正确，例如 2026-12-12 09:00');
+      if (_startAt == null) {
+        _toast('请选择开始时间');
         return;
       }
-      if (deadlineRaw.isNotEmpty && deadline == null) {
-        _toast('报名截止格式不正确，例如 2026-12-11 18:00');
+      if (!_startAt!.isAfter(DateTime.now())) {
+        _toast('开始时间需要晚于现在');
         return;
       }
-      if (startAt != null && startAt.isBefore(DateTime.now())) {
-        _toast('开始时间不能早于当前时间');
-        return;
-      }
-      if (deadline != null && deadline.isBefore(DateTime.now())) {
-        _toast('报名截止不能早于当前时间');
-        return;
-      }
-      if (startAt != null && deadline != null && deadline.isAfter(startAt)) {
-        _toast('报名截止不能晚于开始时间');
-        return;
+
+      // 发起活动必须留手机号，否则雪友同意了也联系不上你。
+      final phone = await ContactService().loadMine();
+      if (phone == null) {
+        if (!mounted) return;
+        final saved = await showPhoneSheet(
+          context,
+          title: '填写手机号',
+          hint: '发起活动需要手机号，方便雪友联系你。',
+        );
+        if (saved == null) return;
       }
 
       final base = Map<String, dynamic>.from(
@@ -271,22 +308,13 @@ class _PublishPostPageState extends State<PublishPostPage> {
       );
       base['activity_type'] = _entityType.replaceFirst('activity_', '');
       base['region_id'] = _region.trim();
-      final resort = _resortController.text.trim();
-      if (resort.isEmpty) {
+      if (_resort.trim().isEmpty) {
         base.remove('resort_id');
       } else {
-        base['resort_id'] = resort;
+        base['resort_id'] = _resort.trim();
       }
-      if (startAt == null) {
-        base.remove('start_at');
-      } else {
-        base['start_at'] = startAt.toUtc().toIso8601String();
-      }
-      if (deadline == null) {
-        base.remove('join_deadline');
-      } else {
-        base['join_deadline'] = deadline.toUtc().toIso8601String();
-      }
+      base['start_at'] = _startAt!.toUtc().toIso8601String();
+      base.remove('join_deadline');
       if (maxValue == null) {
         base.remove('max_participants');
       } else {
@@ -302,8 +330,7 @@ class _PublishPostPageState extends State<PublishPostPage> {
       final region =
           (profile?['resident_region'] as String?)?.trim() ?? _region.trim();
       final resort =
-          (profile?['resident_resort'] as String?)?.trim() ??
-          _resortController.text.trim();
+          (profile?['resident_resort'] as String?)?.trim() ?? _resort.trim();
       final base = Map<String, dynamic>.from(
         widget.initialPost?.extraData ?? const <String, dynamic>{},
       );
@@ -440,43 +467,32 @@ class _PublishPostPageState extends State<PublishPostPage> {
             AppField(
               label: '活动地区',
               requiredMark: true,
-              child: AppDropdown<String>(
-                options: [
-                  for (final province in GeoRepository.instance.provinceNames)
-                    AppOption<String>(province, province),
-                ],
+              note: '选到区县',
+              child: _PickerTile(
                 value: _region,
-                hint: '请选择地区',
-                onChanged: (value) => setState(() => _region = value ?? ''),
+                hint: '请选择省市/区县',
+                onTap: _pickRegion,
               ),
             ),
             const SizedBox(height: AppSpace.lg),
             AppField(
               label: '雪场',
-              note: '可选',
-              child: AppTextField(
-                controller: _resortController,
-                hint: '例如 崇礼·万龙',
+              requiredMark: _requiresResort,
+              note: _requiresResort ? '必选' : '可选',
+              child: _PickerTile(
+                value: _resort,
+                hint: _requiresResort ? '搜索并选择雪场' : '不指定也可以',
+                onTap: _pickResort,
               ),
             ),
             const SizedBox(height: AppSpace.lg),
             AppField(
               label: '开始时间',
-              note: '格式 2026-12-12 09:00',
-              child: AppTextField(
-                controller: _startAtController,
-                hint: '2026-12-12 09:00',
-                keyboardType: TextInputType.datetime,
-              ),
-            ),
-            const SizedBox(height: AppSpace.lg),
-            AppField(
-              label: '报名截止',
-              note: '可选，格式同上',
-              child: AppTextField(
-                controller: _deadlineController,
-                hint: '2026-12-11 18:00',
-                keyboardType: TextInputType.datetime,
+              requiredMark: true,
+              child: _PickerTile(
+                value: _startAt == null ? '' : _prettyTime(_startAt!.toIso8601String()),
+                hint: '选择开始时间',
+                onTap: _pickStartAt,
               ),
             ),
             const SizedBox(height: AppSpace.lg),
@@ -485,7 +501,7 @@ class _PublishPostPageState extends State<PublishPostPage> {
               note: '不填则无上限',
               child: AppTextField(
                 controller: _maxController,
-                hint: '例如 10',
+                hint: '例如 3',
                 keyboardType: TextInputType.number,
               ),
             ),
@@ -708,6 +724,53 @@ class _PickedTile extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 表单里的「点击选择」字段：只显示结果，不提供键盘输入。
+class _PickerTile extends StatelessWidget {
+  const _PickerTile({
+    required this.value,
+    required this.hint,
+    required this.onTap,
+  });
+
+  final String value;
+  final String hint;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final filled = value.trim().isNotEmpty;
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      onTap: onTap,
+      child: Container(
+        height: 48,
+        padding: const EdgeInsets.symmetric(horizontal: AppSpace.md),
+        alignment: Alignment.centerLeft,
+        decoration: BoxDecoration(
+          color: colors.soft,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                filled ? value : hint,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.body.copyWith(
+                  color: filled ? colors.ink : colors.muted,
+                ),
+              ),
+            ),
+            Icon(AppIcons.chevron, size: 18, color: colors.muted),
+          ],
+        ),
+      ),
     );
   }
 }

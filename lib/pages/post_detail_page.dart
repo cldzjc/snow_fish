@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/base_entity.dart';
 import '../models/comment_model.dart';
+import '../services/contact_service.dart';
 import '../services/entity_service.dart';
 import '../services/comment_service.dart';
 import '../services/moderation_service.dart';
@@ -10,6 +11,7 @@ import '../services/share_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
+import '../widgets/app/activity_form_sheets.dart';
 import '../widgets/app/app_avatar.dart';
 import '../widgets/app/app_button.dart';
 import '../widgets/app/app_field.dart';
@@ -21,6 +23,7 @@ import '../widgets/app/status_chip.dart';
 import '../widgets/comment_input_sheet.dart';
 import '../widgets/comment_item.dart';
 import '../widgets/post_action_bar.dart';
+import '../utils/geo_format.dart';
 import '../utils/time_utils.dart';
 import 'image_gallery_page.dart';
 import 'login_page.dart';
@@ -62,6 +65,9 @@ class _PostDetailPageState extends State<PostDetailPage> {
   bool _joined = false;
   bool _activityBusy = false;
   int _participantCount = 0;
+
+  /// 当前用户对这个活动的申请记录（id + status）。
+  Map<String, dynamic>? _myRequest;
 
   bool _deleting = false;
 
@@ -129,10 +135,12 @@ class _PostDetailPageState extends State<PostDetailPage> {
         count++;
         if (row['user_id'] == uid) joined = true;
       }
+      final request = await _entityService.myActivityRequest(widget.postId);
       if (!mounted) return;
       setState(() {
         _participantCount = count;
         _joined = joined;
+        _myRequest = request;
       });
     } catch (e) {
       debugPrint('加载报名状态失败: $e');
@@ -372,7 +380,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
     return '请稍后再试';
   }
 
-  Future<void> _toggleJoin() async {
+  /// 申请参与：先补手机号 -> 二次确认 -> 提交申请。
+  Future<void> _requestJoin() async {
     if (_activityBusy) return;
     if (Supabase.instance.client.auth.currentSession == null) {
       await Navigator.push(
@@ -381,18 +390,49 @@ class _PostDetailPageState extends State<PostDetailPage> {
       );
       return;
     }
+
+    var phone = await ContactService().loadMine();
+    if (!mounted) return;
+    if (phone == null) {
+      phone = await showPhoneSheet(
+        context,
+        title: '填写手机号',
+        hint: '参与活动需要手机号，对方同意后你们可以互相联系。',
+      );
+      if (phone == null) return;
+    }
+
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('确认申请参与？'),
+        content: Text(
+          '你的手机号 ${ContactService.mask(phone!)} 会提供给发起者，'
+          '方便你们碰头。对方同意后你也能看到对方的号码。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('否'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('是'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
     setState(() => _activityBusy = true);
     try {
-      if (_joined) {
-        await _entityService.cancelActivityJoin(widget.postId);
-      } else {
-        await _entityService.joinActivity(widget.postId);
-      }
+      await _entityService.requestJoinActivity(widget.postId);
       await _loadActivityState();
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(_joined ? '已报名参与' : '已取消报名')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已发送参与申请，等对方确认')),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -403,11 +443,65 @@ class _PostDetailPageState extends State<PostDetailPage> {
     }
   }
 
+  Future<void> _cancelJoin() async {
+    if (_activityBusy) return;
+    setState(() => _activityBusy = true);
+    try {
+      await _entityService.cancelActivityRequest(widget.postId);
+      await _loadActivityState();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已取消，人数已释放')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_joinMessage(e))));
+    } finally {
+      if (mounted) setState(() => _activityBusy = false);
+    }
+  }
+
+  /// 查看对方手机号：申请人需被同意，发起者随时可看。
+  Future<void> _showContact() async {
+    final requestId = _myRequest?['id']?.toString();
+    if (requestId == null || requestId.isEmpty) return;
+    try {
+      final phone = await _entityService.activityContact(requestId);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('联系电话'),
+          content: SelectableText(
+            phone,
+            style: AppText.pageTitle.copyWith(
+              color: Theme.of(dialogContext).colorScheme.onSurface,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('知道了'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '暂时拿不到手机号'))),
+      );
+    }
+  }
+
   String _joinMessage(Object error) {
     final text = error.toString();
     if (text.contains('人数已满')) return '活动人数已满';
-    if (text.contains('报名已截止')) return '活动报名已截止';
     if (text.contains('活动已开始')) return '活动已开始';
+    if (text.contains('手机号')) return '请先填写手机号';
+    if (text.contains('自己')) return '这是你自己发起的活动';
     if (text.contains('不在招募状态')) return '活动当前不在招募中';
     if (text.contains('请先登录')) return '请先登录后报名';
     return '请稍后再试';
@@ -648,47 +742,53 @@ class _PostDetailPageState extends State<PostDetailPage> {
     final extra = post.extraData;
     final region = extra['region_id']?.toString().trim() ?? '';
     final resort = extra['resort_id']?.toString().trim() ?? '';
-    final place = [region, resort].where((item) => item.isNotEmpty).join(' · ');
+    final place = shortRegionLabel(region: region, resort: resort);
     final startRaw = extra['start_at']?.toString() ?? '';
-    final deadlineRaw = extra['join_deadline']?.toString() ?? '';
     final maxRaw = extra['max_participants']?.toString() ?? '';
     final status = extra['activity_status']?.toString() ?? 'recruiting';
 
     final startAt = DateTime.tryParse(startRaw);
-    final deadline = DateTime.tryParse(deadlineRaw);
     final maxParticipants = int.tryParse(maxRaw);
     final now = DateTime.now();
 
     final ended = status == 'ended' || status == 'cancelled';
     final started = startAt != null && startAt.isBefore(now);
-    final deadlinePassed = deadline != null && deadline.isBefore(now);
     final isFull =
         status == 'full' ||
         (maxParticipants != null && _participantCount >= maxParticipants);
 
+    final requestStatus = _myRequest?['status']?.toString() ?? '';
+    final pending = requestStatus == 'pending';
+    final accepted = requestStatus == 'accepted';
+    final declined = requestStatus == 'declined';
+
     late final String actionLabel;
     late final bool canAct;
+    late final VoidCallback onAction;
     if (_isOwn) {
       actionLabel = '我发起的活动';
       canAct = false;
-    } else if (_joined) {
-      actionLabel = ended ? '活动已结束' : '取消报名';
-      canAct = !ended;
-    } else if (ended) {
-      actionLabel = '活动已结束';
+      onAction = () {};
+    } else if (accepted) {
+      actionLabel = '取消参加';
+      canAct = !ended && !started;
+      onAction = _cancelJoin;
+    } else if (pending) {
+      actionLabel = '已申请，等对方确认';
       canAct = false;
-    } else if (started) {
-      actionLabel = '活动已开始';
+      onAction = () {};
+    } else if (ended || started) {
+      actionLabel = started ? '活动已开始' : '活动已结束';
       canAct = false;
+      onAction = () {};
     } else if (isFull) {
       actionLabel = '已满员';
       canAct = false;
-    } else if (deadlinePassed) {
-      actionLabel = '报名已截止';
-      canAct = false;
+      onAction = () {};
     } else {
-      actionLabel = '报名参与';
+      actionLabel = declined ? '再申请一次' : '申请参与';
       canAct = true;
+      onAction = _requestJoin;
     }
 
     return Container(
@@ -723,25 +823,47 @@ class _PostDetailPageState extends State<PostDetailPage> {
           ),
           const SizedBox(height: AppSpace.md),
           _InfoRow(
-            label: '报名截止',
-            value: deadlineRaw.isEmpty ? '不限' : _prettyDate(deadlineRaw),
-          ),
-          const SizedBox(height: AppSpace.md),
-          _InfoRow(
             label: '参与人数',
             value: maxParticipants == null
-                ? '已报名 $_participantCount 人'
-                : '已报名 $_participantCount / $maxParticipants 人',
+                ? '$_participantCount 人'
+                : '$_participantCount / $maxParticipants 人',
           ),
+          if (pending) ...[
+            const SizedBox(height: AppSpace.md),
+            _InfoRow(label: '我的申请', value: '已发送，等对方处理'),
+          ],
+          if (declined) ...[
+            const SizedBox(height: AppSpace.md),
+            _InfoRow(label: '我的申请', value: '对方婉拒了，可以再申请一次'),
+          ],
           const SizedBox(height: AppSpace.xl),
           AppButton(
             label: actionLabel,
             expand: true,
-            icon: _joined ? AppIcons.close : AppIcons.group,
+            icon: accepted ? AppIcons.close : AppIcons.group,
             loading: _activityBusy,
             variant: canAct ? AppButtonVariant.solid : AppButtonVariant.outline,
-            onPressed: canAct ? _toggleJoin : null,
+            onPressed: canAct ? onAction : null,
           ),
+          if (pending && !_isOwn) ...[
+            const SizedBox(height: AppSpace.sm),
+            Center(
+              child: TextButton(
+                onPressed: _activityBusy ? null : _cancelJoin,
+                child: const Text('撤回申请'),
+              ),
+            ),
+          ],
+          if (accepted) ...[
+            const SizedBox(height: AppSpace.sm),
+            AppButton(
+              label: '查看对方手机号',
+              expand: true,
+              variant: AppButtonVariant.outline,
+              icon: AppIcons.person,
+              onPressed: _showContact,
+            ),
+          ],
         ],
       ),
     );

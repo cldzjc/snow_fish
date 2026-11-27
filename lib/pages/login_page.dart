@@ -4,11 +4,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../services/contact_service.dart';
 import '../services/profile_sync_service.dart';
 import '../services/turnstile_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
+import '../widgets/app/activity_form_sheets.dart';
 import '../widgets/app/app_button.dart';
 import '../widgets/app/app_field.dart';
 import 'register_page.dart';
@@ -118,6 +120,14 @@ class _LoginPageState extends State<LoginPage> {
       );
       if (response.session != null) {
         await ProfileSyncService().ensureCurrentProfile();
+        final phone = await ContactService().loadMine(force: true);
+        if (mounted && phone == null) {
+          await showPhoneSheet(
+            context,
+            title: '填写手机号',
+            hint: '参加活动时方便雪友联系你。',
+          );
+        }
       }
       if (mounted && response.session != null) {
         Navigator.of(context).popUntil((route) => route.isFirst);

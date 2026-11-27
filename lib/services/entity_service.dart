@@ -147,6 +147,10 @@ class EntityService {
   }
 
   /// 获取约约约活动列表
+  /// 约约约看板：只返回还在招募、且还没开始的活动，按开始时间升序。
+  ///
+  /// 满员 / 已开始 / 已结束的活动由发起者或时间推进，这里统一过滤掉，
+  /// 避免「点进去发现报名不了」。
   Future<List<BaseEntity>> fetchActivities({
     String? regionId,
     String? activityType,
@@ -154,23 +158,54 @@ class EntityService {
     var query = _client
         .from('entities')
         .select('*, media(*)')
-        .inFilter('entity_type', [
-          'activity_ski',
-          'activity_photo',
-          'activity_food',
-          'activity_gear',
-        ])
+        .inFilter('entity_type', activityEntityTypes)
         .eq('moderation_status', 'visible');
     if (regionId != null && regionId.isNotEmpty) {
-      query = query.filter('extra_data->>region_id', 'eq', regionId);
+      // 老活动只记到省份，新活动记到区县，用前缀匹配两种都能命中。
+      query = query.like('extra_data->>region_id', '$regionId%');
     }
     if (activityType != null && activityType.isNotEmpty) {
       query = query.filter('extra_data->>activity_type', 'eq', activityType);
     }
-    final response = await query.order('created_at', ascending: false);
-    return (response as List)
+    final response = await query.limit(200);
+    final now = DateTime.now();
+    final items = (response as List)
         .map((item) => BaseEntity.fromJson(item as Map<String, dynamic>))
+        .where((item) => isActivityOpen(item, now))
         .toList();
+    items.sort((a, b) {
+      final left = activityStartAt(a);
+      final right = activityStartAt(b);
+      if (left == null && right == null) return b.createdAt.compareTo(a.createdAt);
+      if (left == null) return 1;
+      if (right == null) return -1;
+      return left.compareTo(right);
+    });
+    return items;
+  }
+
+  /// 活动类型（entity_type）。
+  static const List<String> activityEntityTypes = <String>[
+    'activity_ski',
+    'activity_photo',
+    'activity_food',
+    'activity_gear',
+  ];
+
+  /// 活动开始时间，未填时为 null。
+  static DateTime? activityStartAt(BaseEntity activity) {
+    final raw = activity.extraData['start_at']?.toString() ?? '';
+    return DateTime.tryParse(raw)?.toLocal();
+  }
+
+  /// 是否还在招募中（未满员、未开始、未被取消）。
+  static bool isActivityOpen(BaseEntity activity, [DateTime? now]) {
+    final extra = activity.extraData;
+    final status = extra['activity_status']?.toString() ?? 'recruiting';
+    if (status != 'recruiting') return false;
+    final start = activityStartAt(activity);
+    if (start != null && !start.isAfter(now ?? DateTime.now())) return false;
+    return true;
   }
 
   /// 我发起的活动
@@ -871,20 +906,64 @@ class EntityService {
     return existing != null;
   }
 
-  Future<bool> joinActivity(String entityId) async {
+  /// 申请参加活动（必须由发起者同意才算加入）。
+  ///
+  /// [phone] 只在当前用户还没填过手机号时传一次，服务端会顺手存下来。
+  Future<String> requestJoinActivity(String entityId, {String? phone}) async {
     final result = await _client.rpc(
-      'join_activity',
+      'activity_request_join',
+      params: {
+        'p_entity_id': entityId,
+        if (phone != null && phone.isNotEmpty) 'p_phone': phone,
+      },
+    );
+    return result is String ? result : '';
+  }
+
+  /// 发起者处理一条申请。
+  Future<void> respondActivityRequest(
+    String requestId, {
+    required bool accept,
+  }) async {
+    await _client.rpc(
+      'activity_respond_request',
+      params: {'p_request_id': requestId, 'p_accept': accept},
+    );
+  }
+
+  /// 取对方手机号：发起者拿申请人的，申请人（被同意后）拿发起者的。
+  Future<String> activityContact(String requestId) async {
+    final result = await _client.rpc(
+      'activity_contact',
+      params: {'p_request_id': requestId},
+    );
+    return result is String ? result : '';
+  }
+
+  /// 撤销申请或取消已同意的报名。
+  Future<bool> cancelActivityRequest(String entityId) async {
+    final result = await _client.rpc(
+      'activity_cancel_request',
       params: {'p_entity_id': entityId},
     );
     return result == true;
   }
 
-  Future<bool> cancelActivityJoin(String entityId) async {
-    final result = await _client.rpc(
-      'cancel_activity_join',
-      params: {'p_entity_id': entityId},
-    );
-    return result == true;
+  /// 当前用户对某个活动的申请记录（id + status），没有则为 null。
+  Future<Map<String, dynamic>?> myActivityRequest(String entityId) async {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) return null;
+    try {
+      final row = await _client
+          .from('activity_requests')
+          .select('id, status')
+          .eq('entity_id', entityId)
+          .eq('applicant_id', uid)
+          .maybeSingle();
+      return row == null ? null : Map<String, dynamic>.from(row);
+    } catch (_) {
+      return null;
+    }
   }
 
   // ============ 辅助方法 ============

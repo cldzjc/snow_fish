@@ -3,11 +3,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/base_entity.dart';
 import '../services/comment_service.dart';
+import '../services/contact_service.dart';
 import '../services/entity_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
 import '../utils/time_utils.dart';
+import '../widgets/app/activity_form_sheets.dart';
 import '../widgets/app/app_icons.dart';
 import '../widgets/app/app_state_views.dart';
 import '../widgets/app/app_tabs.dart';
@@ -58,6 +60,7 @@ class _MyContentPageState extends State<MyContentPage> {
   List<BaseEntity> _created = <BaseEntity>[];
   List<BaseEntity> _joined = <BaseEntity>[];
   List<BaseEntity> _ended = <BaseEntity>[];
+  String? _phone;
 
   final Map<String, Map<String, dynamic>> _profiles = {};
   final Map<String, int> _likeCounts = {};
@@ -99,6 +102,7 @@ class _MyContentPageState extends State<MyContentPage> {
         case MyContentKind.community:
         case MyContentKind.about:
         case MyContentKind.settings:
+          _phone = await ContactService().loadMine();
           break;
       }
       if (!mounted) return;
@@ -262,10 +266,7 @@ class _MyContentPageState extends State<MyContentPage> {
       );
     }
     if (widget.kind == MyContentKind.settings) {
-      return _staticScaffold(
-        '设置',
-        '目前还没有需要在这里调整的选项。\n修改昵称、头像、常驻地点，请在「我的」页点「编辑资料」。',
-      );
+      return _buildSettings();
     }
 
     return Scaffold(
@@ -282,6 +283,73 @@ class _MyContentPageState extends State<MyContentPage> {
         ],
       ),
     );
+  }
+
+  Widget _buildSettings() {
+    final colors = context.colors;
+    return Scaffold(
+      appBar: AppBar(title: const Text('设置')),
+      body: ListView(
+        children: [
+          InkWell(
+            onTap: _editPhone,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpace.xl,
+                vertical: AppSpace.lg,
+              ),
+              child: Row(
+                children: [
+                  Text(
+                    '手机号',
+                    style: AppText.body.copyWith(color: colors.ink),
+                  ),
+                  const Spacer(),
+                  Text(
+                    _phone == null ? '未填写' : ContactService.mask(_phone!),
+                    style: AppText.bodySmall.copyWith(color: colors.muted),
+                  ),
+                  const SizedBox(width: AppSpace.xs),
+                  Icon(AppIcons.chevron, size: 18, color: colors.muted),
+                ],
+              ),
+            ),
+          ),
+          Divider(color: colors.line, height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpace.xl,
+              AppSpace.lg,
+              AppSpace.xl,
+              0,
+            ),
+            child: Text(
+              '手机号只在约活动时提供给对方，个人主页不会展示。',
+              style: AppText.caption.copyWith(color: colors.muted),
+            ),
+          ),
+          const SizedBox(height: AppSpace.xxl),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpace.xl),
+            child: Text(
+              '修改昵称、头像、常驻地点，请在「我的」页点「编辑资料」。',
+              style: AppText.caption.copyWith(color: colors.muted),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editPhone() async {
+    if (Supabase.instance.client.auth.currentSession == null) return;
+    final saved = await showPhoneSheet(
+      context,
+      initial: _phone,
+      title: _phone == null ? '填写手机号' : '修改手机号',
+    );
+    if (saved == null || !mounted) return;
+    setState(() => _phone = saved);
   }
 
   Widget _staticScaffold(String title, String text) {

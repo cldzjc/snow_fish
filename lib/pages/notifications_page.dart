@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
+import '../services/entity_service.dart';
 import '../utils/time_utils.dart';
 import '../widgets/app/app_icons.dart';
 import '../widgets/app/app_state_views.dart';
@@ -29,6 +30,7 @@ class _NotificationsPageState extends State<NotificationsPage>
   final Set<String> _markedLocally = <String>{};
 
   List<Map<String, dynamic>> _items = <Map<String, dynamic>>[];
+  Set<String> _pendingRequests = <String>{};
   bool _loading = true;
   String? _error;
 
@@ -66,8 +68,11 @@ class _NotificationsPageState extends State<NotificationsPage>
           .limit(_pageSize);
       final unread = await _client.rpc('get_notification_unread_count');
       if (!mounted) return;
+      final pending = await _loadPendingRequests(rows as List);
+      if (!mounted) return;
       setState(() {
         _items = List<Map<String, dynamic>>.from(rows);
+        _pendingRequests = pending;
         _markedLocally.clear();
         _loading = false;
       });
@@ -85,6 +90,28 @@ class _NotificationsPageState extends State<NotificationsPage>
 
   bool _isUnread(Map<String, dynamic> item) =>
       item['read_at'] == null && !_markedLocally.contains(item['id']);
+
+  /// 哪些活动申请还没被处理（决定通知里是否显示操作按钮）。
+  Future<Set<String>> _loadPendingRequests(List<dynamic> rows) async {
+    final ids = rows
+        .where((row) => row['notification_type'] == 'activity_request')
+        .map((row) => row['request_id'] as String?)
+        .whereType<String>()
+        .toSet();
+    if (ids.isEmpty) return <String>{};
+    try {
+      final result = await _client
+          .from('activity_requests')
+          .select('id')
+          .inFilter('id', ids.toList())
+          .eq('status', 'pending');
+      return (result as List)
+          .map((row) => row['id'] as String)
+          .toSet();
+    } catch (_) {
+      return <String>{};
+    }
+  }
 
   Future<void> _markRead(Map<String, dynamic> item) async {
     if (!_isUnread(item)) return;
@@ -124,6 +151,56 @@ class _NotificationsPageState extends State<NotificationsPage>
       MaterialPageRoute(builder: (_) => PostDetailPage(postId: entityId)),
     );
     if (mounted) await _load();
+  }
+
+  /// 发起者处理活动申请。
+  Future<void> _respondRequest(Map<String, dynamic> item, bool accept) async {
+    final requestId = item['request_id'] as String?;
+    if (requestId == null || requestId.isEmpty) return;
+    try {
+      await EntityService().respondActivityRequest(requestId, accept: accept);
+      await _markRead(item);
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(accept ? '已同意，对方会收到通知' : '已婉拒，对方会收到通知'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '操作失败'))),
+      );
+    }
+  }
+
+  /// 发起者查看申请人手机号。
+  Future<void> _showApplicantPhone(Map<String, dynamic> item) async {
+    final requestId = item['request_id'] as String?;
+    if (requestId == null || requestId.isEmpty) return;
+    try {
+      final phone = await EntityService().activityContact(requestId);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('申请人的手机号'),
+          content: SelectableText(phone),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('知道了'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e, fallback: '暂时拿不到手机号'))),
+      );
+    }
   }
 
   @override
@@ -180,8 +257,36 @@ class _NotificationsPageState extends State<NotificationsPage>
             item: item,
             unread: _isUnread(item),
             onTap: () => _handleTap(item),
+            actions: _buildRequestActions(item),
           );
         },
+      ),
+    );
+  }
+
+  /// 活动申请通知里的三个操作。
+  Widget? _buildRequestActions(Map<String, dynamic> item) {
+    if (item['notification_type'] != 'activity_request') return null;
+    final requestId = item['request_id'] as String?;
+    if (requestId == null || !_pendingRequests.contains(requestId)) return null;
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpace.sm),
+      child: Wrap(
+        spacing: AppSpace.sm,
+        children: [
+          TextButton(
+            onPressed: () => _showApplicantPhone(item),
+            child: const Text('获取手机号'),
+          ),
+          TextButton(
+            onPressed: () => _respondRequest(item, false),
+            child: const Text('婉拒'),
+          ),
+          TextButton(
+            onPressed: () => _respondRequest(item, true),
+            child: const Text('同意'),
+          ),
+        ],
       ),
     );
   }
@@ -192,11 +297,13 @@ class _NotificationRow extends StatelessWidget {
     required this.item,
     required this.unread,
     required this.onTap,
+    this.actions,
   });
 
   final Map<String, dynamic> item;
   final bool unread;
   final VoidCallback onTap;
+  final Widget? actions;
 
   @override
   Widget build(BuildContext context) {
@@ -262,10 +369,11 @@ class _NotificationRow extends StatelessWidget {
                       ].join(' · '),
                       style: AppText.caption.copyWith(color: colors.muted),
                     ),
+                    if (actions != null) actions!,
                   ],
                 ),
               ),
-              if (hasTarget)
+              if (hasTarget && actions == null)
                 Padding(
                   padding: const EdgeInsets.only(top: AppSpace.sm),
                   child: Icon(AppIcons.chevron, size: 18, color: colors.muted),

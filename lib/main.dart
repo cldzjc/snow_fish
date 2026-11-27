@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'supabase_client.dart';
 import 'config.dart';
 import 'constants/geo.dart';
@@ -110,6 +111,14 @@ class _MyAppState extends State<MyApp> {
       // 目前只做了浅色一套视觉（品牌笔迹、开屏、卡片都按白底调的），
       // 跟随系统会在深色设备上出现黑底黑字，先锁定浅色。
       themeMode: ThemeMode.light,
+      // 时间轮盘等系统组件需要中文文案。
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [Locale('zh', 'CN'), Locale('en', 'US')],
+      locale: const Locale('zh', 'CN'),
       // 桌面/平板上把内容限制在移动端宽度，避免拉伸成另一种版式。
       builder: (context, child) {
         return ColoredBox(

@@ -8,6 +8,7 @@ import '../constants/geo.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
+import '../utils/geo_format.dart';
 import '../widgets/app/app_field.dart';
 import '../widgets/app/app_icons.dart';
 import '../widgets/app/app_state_views.dart';
@@ -81,24 +82,6 @@ class ActivityListWidgetState extends State<ActivityListWidget>
   int _lastNewCount = 0;
 
   Future<void> _load({bool initial = false, bool showSkeleton = true}) async {
-    if (initial) {
-      // 首次进入时把常驻地区作为默认浏览地区，没有则看全部。
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user != null) {
-        try {
-          final row = await Supabase.instance.client
-              .from('user_profiles')
-              .select('resident_region')
-              .eq('id', user.id)
-              .maybeSingle();
-          final region = (row?['resident_region'] as String?)?.trim() ?? '';
-          final province = GeoRepository.instance.provinceOf(region);
-          if (province.isNotEmpty) _region = province;
-        } catch (_) {
-          // 读取失败时保持「全部地区」。
-        }
-      }
-    }
     if (!mounted) return;
     setState(() {
       if (showSkeleton) _loading = true;
@@ -211,7 +194,7 @@ class _ActivityRow extends StatelessWidget {
     final colors = context.colors;
     final region = activity.extraData['region_id']?.toString().trim() ?? '';
     final resort = activity.extraData['resort_id']?.toString().trim() ?? '';
-    final place = [region, resort].where((item) => item.isNotEmpty).join(' · ');
+    final place = shortRegionLabel(region: region, resort: resort);
 
     return Semantics(
       button: true,
