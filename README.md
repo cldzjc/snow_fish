@@ -187,15 +187,14 @@ flutter build ios --release
 
 ### 构建 Web
 ```bash
-flutter build web --release --no-tree-shake-icons
+tool\deploy_web.bat          # 构建 + 部署到 Cloudflare Pages
+tool\deploy_web.bat build    # 只构建
 ```
 
-`--no-tree-shake-icons` 是必需的：图标瘦身依赖 Flutter 自带的 `font-subset.exe`，
-它在 Windows 11 的「智能应用控制」（Smart App Control）下会被判定为无签名程序并拦截，
-构建会以 `应用程序控制策略已阻止此文件` 失败。代价是字体体积变大（约 1.6 MB），
-一次加载后由浏览器缓存。
-
-如果关闭了智能应用控制，可以去掉该参数恢复图标瘦身。
+不要直接用 `flutter build web`：图标瘦身要调用 Flutter 自带的 `font-subset.exe`，
+这个文件没有数字签名，会被 Windows 11 的「智能应用控制」（Smart App Control）拦截，
+构建以 `应用程序控制策略已阻止此文件` 失败。脚本里已经带上 `--no-tree-shake-icons`
+跳过该工具，代价是字体多约 1.6 MB（首次加载后由浏览器缓存）。
 
 ## 🤝 贡献
 
