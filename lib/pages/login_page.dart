@@ -4,14 +4,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../services/contact_service.dart';
-import '../services/profile_sync_service.dart';
-import '../services/turnstile_service.dart';
 import '../app_version.dart';
+import '../services/profile_sync_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
-import '../widgets/app/activity_form_sheets.dart';
 import '../widgets/app/app_button.dart';
 import '../widgets/app/app_field.dart';
 import 'register_page.dart';
@@ -26,19 +23,11 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _otpController = TextEditingController();
-  final _turnstileService = TurnstileService();
 
   Timer? _countdownTimer;
   bool _isLoading = false;
   bool _otpSent = false;
   int _secondsRemaining = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    // 先把人机验证跑掉，点「发送验证码」时就不用干等。
-    unawaited(_turnstileService.warmUp());
-  }
 
   @override
   void dispose() {
@@ -86,14 +75,6 @@ class _LoginPageState extends State<LoginPage> {
     }
     setState(() => _isLoading = true);
     try {
-      if (_turnstileService.isSupported) {
-        final outcome = await _turnstileService.ensureVerified();
-        // skipped 是「验证服务不给力」，仍然放行；只有服务端明确拒绝才拦。
-        if (outcome == TurnstileOutcome.rejected) {
-          _toast('人机验证没有通过，请再试一次', error: true);
-          return;
-        }
-      }
       await Supabase.instance.client.auth.signInWithOtp(
         email: email,
         shouldCreateUser: false,
@@ -128,14 +109,6 @@ class _LoginPageState extends State<LoginPage> {
       );
       if (response.session != null) {
         await ProfileSyncService().ensureCurrentProfile();
-        final phone = await ContactService().loadMine(force: true);
-        if (mounted && phone == null) {
-          await showPhoneSheet(
-            context,
-            title: '填写手机号',
-            hint: '参加活动时方便雪友联系你。',
-          );
-        }
       }
       if (mounted && response.session != null) {
         Navigator.of(context).popUntil((route) => route.isFirst);

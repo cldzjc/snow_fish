@@ -5,12 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/profile_sync_service.dart';
-import '../services/turnstile_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
 import '../widgets/app/app_button.dart';
 import '../widgets/app/app_field.dart';
+import 'legal_page.dart';
 import 'login_page.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -23,19 +23,11 @@ class RegisterPage extends StatefulWidget {
 class _RegisterPageState extends State<RegisterPage> {
   final _emailController = TextEditingController();
   final _otpController = TextEditingController();
-  final _turnstileService = TurnstileService();
 
   Timer? _countdownTimer;
   bool _isLoading = false;
   bool _otpSent = false;
   int _secondsRemaining = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    // 一打开注册页就跑人机验证，别等用户填完邮箱再等。
-    unawaited(_turnstileService.warmUp());
-  }
 
   @override
   void dispose() {
@@ -83,14 +75,6 @@ class _RegisterPageState extends State<RegisterPage> {
     }
     setState(() => _isLoading = true);
     try {
-      if (_turnstileService.isSupported) {
-        final outcome = await _turnstileService.ensureVerified();
-        // skipped 是「验证服务不给力」，仍然放行；只有服务端明确拒绝才拦。
-        if (outcome == TurnstileOutcome.rejected) {
-          _toast('人机验证没有通过，请再试一次', error: true);
-          return;
-        }
-      }
       await Supabase.instance.client.auth.signInWithOtp(
         email: email,
         shouldCreateUser: true,
@@ -159,11 +143,6 @@ class _RegisterPageState extends State<RegisterPage> {
           Text('skneo.', style: AppText.brand.copyWith(color: colors.ink)),
           const SizedBox(height: AppSpace.xxl),
           Text('从这里，加入雪友。', style: AppText.display.copyWith(color: colors.ink)),
-          const SizedBox(height: AppSpace.sm),
-          Text(
-            '用邮箱收一个验证码就行，昵称和头像之后可以再补。',
-            style: AppText.bodySmall.copyWith(color: colors.muted),
-          ),
           const SizedBox(height: AppSpace.xxxl),
           AppField(
             label: '邮箱',
@@ -224,8 +203,45 @@ class _RegisterPageState extends State<RegisterPage> {
               style: AppText.bodySmall.copyWith(color: colors.muted),
             ),
           ),
+          const SizedBox(height: AppSpace.md),
+          _AgreementLine(),
         ],
       ),
+    );
+  }
+}
+
+/// 注册即表示同意条款；两个名称可直接点开阅读。
+class _AgreementLine extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final style = AppText.caption.copyWith(color: colors.muted, height: 1.6);
+    final linkStyle = style.copyWith(
+      color: colors.ink,
+      decoration: TextDecoration.underline,
+    );
+
+    void open(LegalDocument document) => Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => LegalPage(document: document)),
+    );
+
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text('注册即表示同意', style: style),
+        GestureDetector(
+          onTap: () => open(LegalDocument.terms),
+          child: Text('《用户协议》', style: linkStyle),
+        ),
+        Text('和', style: style),
+        GestureDetector(
+          onTap: () => open(LegalDocument.privacy),
+          child: Text('《隐私政策》', style: linkStyle),
+        ),
+      ],
     );
   }
 }

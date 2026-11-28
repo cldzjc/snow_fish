@@ -3,7 +3,7 @@
 /// 每次发布到 Cloudflare 前手动递增：
 ///   1.0.1 → 1.0.2（修 bug）→ 1.1.0（加功能）→ 2.0.0（大改）
 /// 只允许追加，不要回退已发布过的编号。
-const String appVersion = '1.0.1';
+const String appVersion = '1.1.0';
 
 /// 本次版本包含的主要变更，便于对照线上是否为预期版本。
-const String appVersionNote = '开屏预取首屏数据 / 人机验证超时放行 / 注册简化为邮箱验证码';
+const String appVersionNote = '移除人机验证 / 注册仅需邮箱验证码 / 个人主页右上角设置与协议入口';

@@ -25,6 +25,7 @@ import 'login_page.dart';
 import 'my_content_page.dart';
 import 'my_posts_page.dart';
 import 'notifications_page.dart';
+import 'settings_page.dart';
 import '../utils/error_text.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -128,18 +129,6 @@ class _ProfilePageState extends State<ProfilePage> {
     if (updated == true) await _load();
   }
 
-  Future<void> _signOut() async {
-    try {
-      await _client.auth.signOut();
-      if (mounted) setState(() {});
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyError(e, fallback: '退出失败'))),
-      );
-    }
-  }
-
   Future<void> _blockUser() async {
     final userId = _targetUserId;
     if (userId == null) return;
@@ -190,18 +179,21 @@ class _ProfilePageState extends State<ProfilePage> {
         actions: [
           if (_client.auth.currentUser != null && _isOwn)
             IconButton(
+              tooltip: '设置',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SettingsPage()),
+              ),
+              icon: const Icon(AppIcons.gear),
+            ),
+          if (_client.auth.currentUser != null && _isOwn)
+            IconButton(
               tooltip: '通知',
               onPressed: () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const NotificationsPage()),
               ),
               icon: const Icon(AppIcons.bell),
-            ),
-          if (_client.auth.currentUser != null && _isOwn)
-            IconButton(
-              tooltip: '退出登录',
-              onPressed: _signOut,
-              icon: const Icon(AppIcons.logout),
             ),
           if (!_isOwn)
             IconButton(
@@ -360,9 +352,13 @@ class _ProfilePageState extends State<ProfilePage> {
       _Entry('我的评论', () => _open(MyContentKind.comments)),
       _Entry('我的收藏', () => _open(MyContentKind.favorites)),
       _Entry('我的活动', () => _open(MyContentKind.activities)),
-      _Entry('社区服务', () => _open(MyContentKind.community)),
-      _Entry('关于 skneo', () => _open(MyContentKind.about)),
-      _Entry('设置', () => _open(MyContentKind.settings)),
+      _Entry(
+        '设置',
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const SettingsPage()),
+        ),
+      ),
       if (_profile?.role == 'admin')
         _Entry(
           '内容治理中心',

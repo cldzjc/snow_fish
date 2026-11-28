@@ -3,7 +3,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/base_entity.dart';
 import '../services/comment_service.dart';
-import '../services/contact_service.dart';
 import '../services/entity_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
@@ -19,14 +18,7 @@ import 'post_detail_page.dart';
 import 'video_player_page.dart';
 import '../utils/error_text.dart';
 
-enum MyContentKind {
-  comments,
-  favorites,
-  activities,
-  community,
-  about,
-  settings,
-}
+enum MyContentKind { comments, favorites, activities }
 
 class MyContentPage extends StatefulWidget {
   const MyContentPage({super.key, required this.kind});
@@ -37,9 +29,6 @@ class MyContentPage extends StatefulWidget {
     MyContentKind.comments => '我的评论',
     MyContentKind.favorites => '我的收藏',
     MyContentKind.activities => '我的活动',
-    MyContentKind.community => '社区服务',
-    MyContentKind.about => '关于 skneo',
-    MyContentKind.settings => '设置',
   };
 
   @override
@@ -60,7 +49,6 @@ class _MyContentPageState extends State<MyContentPage> {
   List<BaseEntity> _created = <BaseEntity>[];
   List<BaseEntity> _joined = <BaseEntity>[];
   List<BaseEntity> _ended = <BaseEntity>[];
-  String? _phone;
 
   final Map<String, Map<String, dynamic>> _profiles = {};
   final Map<String, int> _likeCounts = {};
@@ -99,11 +87,6 @@ class _MyContentPageState extends State<MyContentPage> {
               .where((item) => _entityService.isActivityEnded(item))
               .toList();
           await _loadCardContext(all, withLikes: false);
-        case MyContentKind.community:
-        case MyContentKind.about:
-        case MyContentKind.settings:
-          _phone = await ContactService().loadMine();
-          break;
       }
       if (!mounted) return;
       setState(() => _loading = false);
@@ -252,23 +235,6 @@ class _MyContentPageState extends State<MyContentPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.kind == MyContentKind.community) {
-      // 没有实质内容就明说，别写成「还在整理」，用户会以为项目没做完。
-      return _staticScaffold(
-        '社区服务',
-        '举报与申诉入口：在任意帖子或评论右上角选择「举报」即可。\n管理员处理后会通过通知告知结果。',
-      );
-    }
-    if (widget.kind == MyContentKind.about) {
-      return _staticScaffold(
-        '关于 skneo',
-        'skneo · sk社区 是给滑雪人的日常社区：\n记录雪上日常，也找到下一趟的同伴。',
-      );
-    }
-    if (widget.kind == MyContentKind.settings) {
-      return _buildSettings();
-    }
-
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
       body: Column(
@@ -281,129 +247,6 @@ class _MyContentPageState extends State<MyContentPage> {
             ),
           Expanded(child: _buildBody()),
         ],
-      ),
-    );
-  }
-
-  Widget _buildSettings() {
-    final colors = context.colors;
-    return Scaffold(
-      appBar: AppBar(title: const Text('设置')),
-      body: ListView(
-        children: [
-          InkWell(
-            onTap: _editPhone,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpace.xl,
-                vertical: AppSpace.lg,
-              ),
-              child: Row(
-                children: [
-                  Text(
-                    '手机号',
-                    style: AppText.body.copyWith(color: colors.ink),
-                  ),
-                  const Spacer(),
-                  Text(
-                    _phone == null ? '未填写' : ContactService.mask(_phone!),
-                    style: AppText.bodySmall.copyWith(color: colors.muted),
-                  ),
-                  const SizedBox(width: AppSpace.xs),
-                  Icon(AppIcons.chevron, size: 18, color: colors.muted),
-                ],
-              ),
-            ),
-          ),
-          Divider(color: colors.line, height: 1),
-          if (_phone != null)
-            InkWell(
-              onTap: _clearPhone,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpace.xl,
-                  vertical: AppSpace.lg,
-                ),
-                child: Text(
-                  '清除手机号',
-                  style: AppText.body.copyWith(color: colors.danger),
-                ),
-              ),
-            ),
-          if (_phone != null) Divider(color: colors.line, height: 1),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpace.xl,
-              AppSpace.lg,
-              AppSpace.xl,
-              0,
-            ),
-            child: Text(
-              '手机号只在约活动时提供给对方，个人主页不会展示。',
-              style: AppText.caption.copyWith(color: colors.muted),
-            ),
-          ),
-          const SizedBox(height: AppSpace.xxl),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpace.xl),
-            child: Text(
-              '修改昵称、头像、常驻地点，请在「我的」页点「编辑资料」。',
-              style: AppText.caption.copyWith(color: colors.muted),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _editPhone() async {
-    if (Supabase.instance.client.auth.currentSession == null) return;
-    final saved = await showPhoneSheet(
-      context,
-      initial: _phone,
-      title: _phone == null ? '填写手机号' : '修改手机号',
-    );
-    if (saved == null || !mounted) return;
-    setState(() => _phone = saved);
-  }
-
-  Future<void> _clearPhone() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('清除手机号？'),
-        content: const Text('清除后，发起活动时会要求你重新填写。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('清除'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    await ContactService().clearMine();
-    if (!mounted) return;
-    setState(() => _phone = null);
-  }
-
-  Widget _staticScaffold(String title, String text) {
-    final colors = context.colors;
-    return Scaffold(
-      appBar: AppBar(title: Text(title)),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpace.xxl),
-          child: Text(
-            text,
-            textAlign: TextAlign.center,
-            style: AppText.bodySmall.copyWith(color: colors.muted),
-          ),
-        ),
       ),
     );
   }
@@ -424,10 +267,6 @@ class _MyContentPageState extends State<MyContentPage> {
           _ => _ended,
         };
         return _buildEntities(items, '还没有活动', '发起的与报名的活动都会出现在这里。');
-      case MyContentKind.community:
-      case MyContentKind.about:
-      case MyContentKind.settings:
-        return const SizedBox.shrink();
     }
   }
 
