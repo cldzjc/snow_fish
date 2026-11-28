@@ -3,7 +3,7 @@
 /// 每次发布到 Cloudflare 前手动递增，用于在管理员端确认线上是否已更新：
 ///   20261121.1 → 20261121.2 → 20261122.1 ...
 /// 只允许追加，不要回退已发布过的编号。
-const String appVersion = '20261127.2';
+const String appVersion = '20261128.1';
 
 /// 本次版本包含的主要变更，便于对照线上是否为预期版本。
-const String appVersionNote = '举报处置改为两键（封号+删除）/ 解封恢复 / 全站关停开关';
+const String appVersionNote = '开屏预取首屏数据 / 登录人机验证预热与重试 / 版本号显示在登录页';

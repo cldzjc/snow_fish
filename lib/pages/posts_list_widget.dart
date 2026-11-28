@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/base_entity.dart';
 import '../models/refresh_result.dart';
 import '../services/entity_service.dart';
+import '../services/feed_cache.dart';
 import '../services/my_profile_store.dart';
+import '../services/profile_cache.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/app/app_icons.dart';
 import '../widgets/app/app_state_views.dart';
@@ -47,7 +48,6 @@ class PostsListWidgetState extends State<PostsListWidget>
   static const int _pageSize = 20;
 
   final EntityService _entityService = EntityService();
-  final Map<String, Map<String, dynamic>> _profileCache = {};
   final Map<String, int> _likeCounts = {};
   final Set<String> _likedIds = {};
   final Set<String> _likeInFlight = {};
@@ -85,7 +85,7 @@ class PostsListWidgetState extends State<PostsListWidget>
   void _onProfileChanged() {
     if (!mounted) return;
     final myId = MyProfileStore.userId;
-    if (myId != null) _profileCache.remove(myId);
+    if (myId != null) ProfileCache.invalidate(myId);
     reloadProfiles();
   }
 
@@ -122,6 +122,11 @@ class PostsListWidgetState extends State<PostsListWidget>
 
   bool get _isCircleFeed => (widget.circleIds ?? const <String>[]).isNotEmpty;
 
+  /// 首屏数据在 [FeedCache] 里的 key，开屏预取用的是同一个。
+  String get _feedKey => _isCircleFeed
+      ? FeedCache.circleKey(widget.circleIds!)
+      : FeedCache.homeKey;
+
   Future<List<BaseEntity>> _fetchPage(int offset) {
     if (_isCircleFeed) {
       return _entityService.fetchCirclePosts(
@@ -147,7 +152,10 @@ class PostsListWidgetState extends State<PostsListWidget>
       setState(() => _error = null);
     }
     try {
-      final posts = await _fetchPage(0);
+      // 首屏优先吃开屏期间的预取结果；刷新则强制换新。
+      final posts = await (showSkeleton
+          ? FeedCache.load<List<BaseEntity>>(_feedKey, () => _fetchPage(0))
+          : FeedCache.refresh<List<BaseEntity>>(_feedKey, () => _fetchPage(0)));
       if (!mounted) return;
       final known = _posts.map((item) => item.id).toSet();
       setState(() {
@@ -213,27 +221,18 @@ class PostsListWidgetState extends State<PostsListWidget>
     List<BaseEntity> posts, {
     bool force = false,
   }) async {
+    if (!mounted) return;
     final userIds = posts.map((post) => post.userId).toSet().toList();
-    final missingIds = force
-        ? userIds
-        : userIds
-              .where((userId) => !_profileCache.containsKey(userId))
-              .toList();
-    if (missingIds.isEmpty || !mounted) return;
+    final needsLoad =
+        force || userIds.any((userId) => ProfileCache.get(userId) == null);
+    if (!needsLoad) {
+      if (_profilesLoading) setState(() => _profilesLoading = false);
+      return;
+    }
 
     setState(() => _profilesLoading = true);
     try {
-      final response = await Supabase.instance.client
-          .from('user_profiles')
-          .select()
-          .inFilter('id', missingIds);
-      for (final profile in response as List) {
-        final map = Map<String, dynamic>.from(profile as Map);
-        final id = map['id'] as String?;
-        if (id != null) _profileCache[id] = map;
-      }
-    } catch (e) {
-      debugPrint('加载作者资料失败: $e');
+      await ProfileCache.ensure(userIds, force: force);
     } finally {
       if (mounted) setState(() => _profilesLoading = false);
     }
@@ -357,7 +356,7 @@ class PostsListWidgetState extends State<PostsListWidget>
           post: _posts[index],
           authorName: (() {
             final nickname =
-                (_profileCache[_posts[index].userId]?['nickname'] as String?)
+                (ProfileCache.get(_posts[index].userId)?['nickname'] as String?)
                     ?.trim();
             if (nickname == null || nickname.isEmpty) {
               return _profilesLoading ? '加载资料…' : '雪友';
@@ -365,12 +364,12 @@ class PostsListWidgetState extends State<PostsListWidget>
             return nickname;
           })(),
           authorAvatar:
-              _profileCache[_posts[index].userId]?['avatar_url'] as String?,
+              ProfileCache.get(_posts[index].userId)?['avatar_url'] as String?,
           region:
-              _profileCache[_posts[index].userId]?['resident_region']
+              ProfileCache.get(_posts[index].userId)?['resident_region']
                   as String?,
           resort:
-              _profileCache[_posts[index].userId]?['resident_resort']
+              ProfileCache.get(_posts[index].userId)?['resident_resort']
                   as String?,
           likeCount: _likeCounts[_posts[index].id] ?? 0,
           liked: _likedIds.contains(_posts[index].id),

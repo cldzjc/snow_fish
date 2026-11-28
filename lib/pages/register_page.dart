@@ -37,6 +37,13 @@ class _RegisterPageState extends State<RegisterPage> {
   String _residentResort = GeoData.noFixedResort;
 
   @override
+  void initState() {
+    super.initState();
+    // 一打开注册页就跑人机验证，别等用户填完邮箱再等。
+    unawaited(_turnstileService.warmUp());
+  }
+
+  @override
   void dispose() {
     _countdownTimer?.cancel();
     _emailController.dispose();
@@ -93,10 +100,13 @@ class _RegisterPageState extends State<RegisterPage> {
     setState(() => _isLoading = true);
     try {
       if (_turnstileService.isSupported) {
-        final token = await _turnstileService.getToken();
-        if (token == null ||
-            !await _turnstileService.verifyWithSupabase(token)) {
-          _toast('人机验证未完成，请重试', error: true);
+        final outcome = await _turnstileService.ensureVerified();
+        if (outcome == TurnstileOutcome.unavailable) {
+          _toast('人机验证服务连不上，请检查网络后重试', error: true);
+          return;
+        }
+        if (outcome != TurnstileOutcome.verified) {
+          _toast(_turnstileService.failureMessage, error: true);
           return;
         }
       }
@@ -252,6 +262,20 @@ class _RegisterPageState extends State<RegisterPage> {
             expand: true,
             loading: _isLoading,
             onPressed: _otpSent ? _verifyCode : _sendCode,
+          ),
+          ValueListenableBuilder<bool>(
+            valueListenable: TurnstileService.challengeSlow,
+            builder: (context, slow, _) {
+              if (!slow) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: AppSpace.md),
+                child: Text(
+                  '正在人机验证。如果页面中央出现验证框，请点一下完成验证。',
+                  textAlign: TextAlign.center,
+                  style: AppText.bodySmall.copyWith(color: colors.muted),
+                ),
+              );
+            },
           ),
           const SizedBox(height: AppSpace.md),
           TextButton(

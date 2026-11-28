@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/contact_service.dart';
 import '../services/profile_sync_service.dart';
 import '../services/turnstile_service.dart';
+import '../app_version.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
@@ -86,10 +87,13 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _isLoading = true);
     try {
       if (_turnstileService.isSupported) {
-        final token = await _turnstileService.getToken();
-        if (token == null ||
-            !await _turnstileService.verifyWithSupabase(token)) {
-          _toast('人机验证未完成，请重试', error: true);
+        final outcome = await _turnstileService.ensureVerified();
+        if (outcome == TurnstileOutcome.unavailable) {
+          _toast('人机验证服务连不上，请检查网络后重试', error: true);
+          return;
+        }
+        if (outcome != TurnstileOutcome.verified) {
+          _toast(_turnstileService.failureMessage, error: true);
           return;
         }
       }
@@ -218,6 +222,20 @@ class _LoginPageState extends State<LoginPage> {
             loading: _isLoading,
             onPressed: _otpSent ? _verifyCode : _sendCode,
           ),
+          ValueListenableBuilder<bool>(
+            valueListenable: TurnstileService.challengeSlow,
+            builder: (context, slow, _) {
+              if (!slow) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: AppSpace.md),
+                child: Text(
+                  '正在人机验证。如果页面中央出现验证框，请点一下完成验证。',
+                  textAlign: TextAlign.center,
+                  style: AppText.bodySmall.copyWith(color: colors.muted),
+                ),
+              );
+            },
+          ),
           const SizedBox(height: AppSpace.md),
           TextButton(
             onPressed: () => Navigator.pushReplacement(
@@ -227,6 +245,14 @@ class _LoginPageState extends State<LoginPage> {
             child: Text(
               '还没有账号？去注册',
               style: AppText.bodySmall.copyWith(color: colors.muted),
+            ),
+          ),
+          const SizedBox(height: AppSpace.xxl),
+          // 手机上没有 Ctrl+F5，把版本号放在这里方便确认线上是否已更新。
+          Center(
+            child: Text(
+              'v$appVersion',
+              style: AppText.caption.copyWith(color: colors.muted),
             ),
           ),
         ],

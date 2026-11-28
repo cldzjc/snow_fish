@@ -37,8 +37,22 @@ class MyProfileStore {
     };
   }
 
-  /// 读取线上资料（force=false 时已有数据也照样刷新）。
-  static Future<void> load() async {
+  static Future<void>? _loading;
+
+  /// 读取线上资料；同一时间只保留一个请求。
+  /// [force] 为 true 时忽略进行中的请求，直接拉最新的。
+  static Future<void> load({bool force = false}) {
+    final running = _loading;
+    if (!force && running != null) return running;
+    final future = _fetchProfile();
+    _loading = future;
+    future.whenComplete(() {
+      if (identical(_loading, future)) _loading = null;
+    });
+    return future;
+  }
+
+  static Future<void> _fetchProfile() async {
     final id = userId;
     if (id == null) {
       profile.value = null;
@@ -75,7 +89,7 @@ class MyProfileStore {
         .from('user_profiles')
         .update({'resident_region': region, 'resident_resort': resort})
         .eq('id', id);
-    await load();
+    await load(force: true);
     changedTick.value++;
   }
 
@@ -124,7 +138,7 @@ class MyProfileStore {
         .from('user_profiles')
         .update({'circle_region': region, 'circle_resort': resort})
         .eq('id', id);
-    await load();
+    await load(force: true);
     changedTick.value++;
   }
 }

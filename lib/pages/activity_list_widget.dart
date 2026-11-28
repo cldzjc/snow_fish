@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/base_entity.dart';
 import '../models/refresh_result.dart';
 import '../services/entity_service.dart';
+import '../services/feed_cache.dart';
 import '../constants/geo.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
@@ -81,12 +82,21 @@ class ActivityListWidgetState extends State<ActivityListWidget>
       if (showSkeleton) _loading = true;
       _error = null;
     });
+    final key = FeedCache.activitiesKey(
+      region: _place.region,
+      resort: _place.resort,
+      type: _type,
+    );
+    Future<List<BaseEntity>> fetch() => _entityService.fetchActivities(
+      regionId: _place.region.isEmpty ? null : _place.region,
+      resortId: _place.resort.isEmpty ? null : _place.resort,
+      activityType: _type.isEmpty ? null : _type,
+    );
     try {
-      final items = await _entityService.fetchActivities(
-        regionId: _place.region.isEmpty ? null : _place.region,
-        resortId: _place.resort.isEmpty ? null : _place.resort,
-        activityType: _type.isEmpty ? null : _type,
-      );
+      // 开屏预取过「全部类型 / 全部地点」，首屏直接命中。
+      final items = initial || showSkeleton
+          ? await FeedCache.load<List<BaseEntity>>(key, fetch)
+          : await FeedCache.refresh<List<BaseEntity>>(key, fetch);
       if (!mounted) return;
       final known = _items.map((item) => item.id).toSet();
       _lastNewCount = known.isEmpty

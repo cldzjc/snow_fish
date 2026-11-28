@@ -47,71 +47,125 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
+  <!--
+    Turnstile 的挂载点。
+
+    `appearance: 'interaction-only'` 下，不需要交互时什么都不显示；
+    需要用户点一下勾选框时，验证框会渲染到这个容器里。容器必须是
+    铺满全屏、层级高于 Flutter 画布的浮层，否则验证框会被画布盖住，
+    用户看不到也点不到，只能一直等到超时。
+
+    pointer-events: none 保证容器本身不拦截点击，只有验证框可点。
+  -->
   <div id="skneo-turnstile-container"></div>
+  <style>
+    #skneo-turnstile-container {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2147483647;
+      pointer-events: none;
+      background: transparent;
+    }
+    #skneo-turnstile-container > * {
+      flex: 0 0 auto;
+      pointer-events: auto;
+    }
+  </style>
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   <script>
     (() => {
       const siteKey = '0x4AAAAAAF6-Q66h3AkTWr-G';
+      const scriptTimeoutMs = 15000;
       let widgetId;
       let callback;
-      let executeWhenReady = false;
+      let lastError = '';
 
-      window.skneoTurnstileRender = (tokenCallback) => {
-        callback = tokenCallback;
-        render();
-      };
+      // 最近一次失败原因（Cloudflare 的错误码，或 script / not-rendered 等），
+      // 供 Dart 侧给出准确提示，而不是笼统的「验证未完成」。
+      window.skneoTurnstileLastError = () => lastError;
 
-      function render() {
-        if (widgetId !== undefined) return;
-        if (!window.turnstile) {
-          window.setTimeout(render, 100);
-          return;
+      function fail(code) {
+        lastError = String(code ?? 'unknown');
+        try {
+          callback?.('');
+        } catch (_) {
+          // Dart 侧回调抛错不应影响 Turnstile 自身状态。
         }
+      }
+
+      function ensureRendered() {
+        if (widgetId !== undefined) return true;
+        if (!window.turnstile) return false;
         widgetId = window.turnstile.render('#skneo-turnstile-container', {
           sitekey: siteKey,
           appearance: 'interaction-only',
           execution: 'execute',
-          callback: (token) => callback?.(token),
-          'expired-callback': () => callback?.(''),
-          'error-callback': () => callback?.('')
+          language: 'zh-cn',
+          callback: (token) => {
+            if (!token) return;
+            lastError = '';
+            try {
+              callback?.(token);
+            } catch (_) {}
+          },
+          'expired-callback': () => fail('expired'),
+          'error-callback': (code) => fail(code)
         });
-        if (executeWhenReady) {
-          executeWhenReady = false;
-          window.turnstile.execute(widgetId);
-        }
+        return true;
       }
-      window.skneoTurnstileExecute = () => {
-        if (widgetId !== undefined && window.turnstile) {
-          window.turnstile.execute(widgetId);
-        } else {
-          executeWhenReady = true;
-        }
-      };
-      window.skneoTurnstileReset = () => {
-        executeWhenReady = false;
-        if (widgetId !== undefined && window.turnstile) {
-          window.turnstile.reset(widgetId);
-        }
-        callback = undefined;
+
+      // 设置本次回调；api.js 还在下载时轮询等待，超时则明确报告加载失败，
+      // 不要再无声地转圈。
+      window.skneoTurnstileRender = (tokenCallback) => {
+        callback = tokenCallback;
+        lastError = '';
+        if (ensureRendered()) return;
+        const startedAt = Date.now();
+        const tick = () => {
+          if (ensureRendered()) return;
+          if (Date.now() - startedAt > scriptTimeoutMs) {
+            fail('script');
+            return;
+          }
+          window.setTimeout(tick, 100);
+        };
+        tick();
       };
 
-      // 预热：页面不可见时不要跑挑战，否则 Turnstile 会反复崩溃重试。
-      window.skneoTurnstileWarmUp = (tokenCallback) => {
-        const run = () => {
-          callback = tokenCallback;
-          render();
-          if (widgetId !== undefined && window.turnstile) {
-            window.turnstile.execute(widgetId);
-          }
-        };
+      window.skneoTurnstileExecute = () => {
+        if (widgetId === undefined || !window.turnstile) {
+          fail('not-rendered');
+          return;
+        }
+        try {
+          window.turnstile.execute(widgetId);
+        } catch (error) {
+          fail('execute');
+        }
+      };
+
+      // 每次重新取 token 前必须 reset：否则 execute() 会把上一次已经用掉的
+      // token 原样返回，服务端校验时报 duplicate。
+      window.skneoTurnstileReset = () => {
+        if (widgetId === undefined || !window.turnstile) return;
+        try {
+          window.turnstile.reset(widgetId);
+        } catch (_) {}
+      };
+
+      // 页面在后台标签页时跑挑战会反复报 300030，等切回来再执行。
+      window.skneoTurnstileWhenVisible = (fn) => {
         if (document.visibilityState === 'visible') {
-          run();
+          fn();
           return;
         }
         const onVisible = () => {
           if (document.visibilityState !== 'visible') return;
           document.removeEventListener('visibilitychange', onVisible);
-          run();
+          fn();
         };
         document.addEventListener('visibilitychange', onVisible);
       };
