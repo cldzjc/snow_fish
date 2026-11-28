@@ -10,6 +10,9 @@ rem 直接用 flutter build web 会在 web_release_bundle 阶段报「应用程�
 setlocal
 cd /d "%~dp0.."
 
+rem 某些终端会预设 CI=true，导致 wrangler 认为无人值守而拒绝用 OAuth 凭据。
+set CI=
+
 echo [1/2] flutter build web --release --no-tree-shake-icons
 call flutter build web --release --no-tree-shake-icons
 if errorlevel 1 goto fail
