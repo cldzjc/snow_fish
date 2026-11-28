@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../constants/geo.dart';
 import '../services/profile_sync_service.dart';
 import '../services/turnstile_service.dart';
 import '../theme/app_colors.dart';
@@ -12,7 +11,6 @@ import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
 import '../widgets/app/app_button.dart';
 import '../widgets/app/app_field.dart';
-import '../widgets/app/geo_picker_sheet.dart';
 import 'login_page.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -24,7 +22,6 @@ class RegisterPage extends StatefulWidget {
 
 class _RegisterPageState extends State<RegisterPage> {
   final _emailController = TextEditingController();
-  final _nameController = TextEditingController();
   final _otpController = TextEditingController();
   final _turnstileService = TurnstileService();
 
@@ -32,9 +29,6 @@ class _RegisterPageState extends State<RegisterPage> {
   bool _isLoading = false;
   bool _otpSent = false;
   int _secondsRemaining = 0;
-
-  String _residentRegion = '';
-  String _residentResort = GeoData.noFixedResort;
 
   @override
   void initState() {
@@ -47,7 +41,6 @@ class _RegisterPageState extends State<RegisterPage> {
   void dispose() {
     _countdownTimer?.cancel();
     _emailController.dispose();
-    _nameController.dispose();
     _otpController.dispose();
     super.dispose();
   }
@@ -83,16 +76,7 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Future<void> _sendCode() async {
-    final name = _nameController.text.trim();
     final email = _emailController.text.trim();
-    if (name.isEmpty) {
-      _toast('请输入用户名', error: true);
-      return;
-    }
-    if (_residentRegion.isEmpty) {
-      _toast('请选择常驻地区', error: true);
-      return;
-    }
     if (!_isValidEmail(email)) {
       _toast('请输入有效的邮箱地址', error: true);
       return;
@@ -101,25 +85,16 @@ class _RegisterPageState extends State<RegisterPage> {
     try {
       if (_turnstileService.isSupported) {
         final outcome = await _turnstileService.ensureVerified();
-        if (outcome == TurnstileOutcome.unavailable) {
-          _toast('人机验证服务连不上，请检查网络后重试', error: true);
-          return;
-        }
-        if (outcome != TurnstileOutcome.verified) {
-          _toast(_turnstileService.failureMessage, error: true);
+        // skipped 是「验证服务不给力」，仍然放行；只有服务端明确拒绝才拦。
+        if (outcome == TurnstileOutcome.rejected) {
+          _toast('人机验证没有通过，请再试一次', error: true);
           return;
         }
       }
       await Supabase.instance.client.auth.signInWithOtp(
         email: email,
         shouldCreateUser: true,
-        data: {
-          'display_name': name,
-          'name': name,
-          'role': 'user',
-          'resident_region': _residentRegion,
-          'resident_resort': _residentResort,
-        },
+        data: {'role': 'user'},
       );
       if (!mounted) return;
       setState(() => _otpSent = true);
@@ -151,11 +126,7 @@ class _RegisterPageState extends State<RegisterPage> {
         type: OtpType.email,
       );
       if (response.session != null) {
-        await ProfileSyncService().ensureCurrentProfile(
-          registrationName: _nameController.text,
-          residentRegion: _residentRegion,
-          residentResort: _residentResort,
-        );
+        await ProfileSyncService().ensureCurrentProfile();
       }
       if (mounted && response.session != null) {
         ScaffoldMessenger.of(
@@ -190,31 +161,10 @@ class _RegisterPageState extends State<RegisterPage> {
           Text('从这里，加入雪友。', style: AppText.display.copyWith(color: colors.ink)),
           const SizedBox(height: AppSpace.sm),
           Text(
-            '常驻地区会作为你的身份标签，出现在你的内容旁。',
+            '用邮箱收一个验证码就行，昵称和头像之后可以再补。',
             style: AppText.bodySmall.copyWith(color: colors.muted),
           ),
           const SizedBox(height: AppSpace.xxxl),
-          if (!_otpSent) ...[
-            AppField(
-              label: '用户名',
-              requiredMark: true,
-              child: AppTextField(controller: _nameController, hint: '你的雪友昵称'),
-            ),
-            const SizedBox(height: AppSpace.lg),
-            AppField(
-              label: '常驻地区',
-              requiredMark: true,
-              child: RegionField(
-                region: _residentRegion,
-                resort: _residentResort,
-                onChanged: (selection) => setState(() {
-                  _residentRegion = selection.region;
-                  _residentResort = selection.resort;
-                }),
-              ),
-            ),
-            const SizedBox(height: AppSpace.lg),
-          ],
           AppField(
             label: '邮箱',
             requiredMark: true,
@@ -262,20 +212,6 @@ class _RegisterPageState extends State<RegisterPage> {
             expand: true,
             loading: _isLoading,
             onPressed: _otpSent ? _verifyCode : _sendCode,
-          ),
-          ValueListenableBuilder<bool>(
-            valueListenable: TurnstileService.challengeSlow,
-            builder: (context, slow, _) {
-              if (!slow) return const SizedBox.shrink();
-              return Padding(
-                padding: const EdgeInsets.only(top: AppSpace.md),
-                child: Text(
-                  '正在人机验证。如果页面中央出现验证框，请点一下完成验证。',
-                  textAlign: TextAlign.center,
-                  style: AppText.bodySmall.copyWith(color: colors.muted),
-                ),
-              );
-            },
           ),
           const SizedBox(height: AppSpace.md),
           TextButton(

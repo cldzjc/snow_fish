@@ -88,12 +88,9 @@ class _LoginPageState extends State<LoginPage> {
     try {
       if (_turnstileService.isSupported) {
         final outcome = await _turnstileService.ensureVerified();
-        if (outcome == TurnstileOutcome.unavailable) {
-          _toast('人机验证服务连不上，请检查网络后重试', error: true);
-          return;
-        }
-        if (outcome != TurnstileOutcome.verified) {
-          _toast(_turnstileService.failureMessage, error: true);
+        // skipped 是「验证服务不给力」，仍然放行；只有服务端明确拒绝才拦。
+        if (outcome == TurnstileOutcome.rejected) {
+          _toast('人机验证没有通过，请再试一次', error: true);
           return;
         }
       }
@@ -221,20 +218,6 @@ class _LoginPageState extends State<LoginPage> {
             expand: true,
             loading: _isLoading,
             onPressed: _otpSent ? _verifyCode : _sendCode,
-          ),
-          ValueListenableBuilder<bool>(
-            valueListenable: TurnstileService.challengeSlow,
-            builder: (context, slow, _) {
-              if (!slow) return const SizedBox.shrink();
-              return Padding(
-                padding: const EdgeInsets.only(top: AppSpace.md),
-                child: Text(
-                  '正在人机验证。如果页面中央出现验证框，请点一下完成验证。',
-                  textAlign: TextAlign.center,
-                  style: AppText.bodySmall.copyWith(color: colors.muted),
-                ),
-              );
-            },
           ),
           const SizedBox(height: AppSpace.md),
           TextButton(
